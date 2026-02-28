@@ -50,7 +50,6 @@ type UserItem = {
   id: string;
   trainer_name: string;
   trainer_code: string;
-  email: string | null;
   role: string;
   active: boolean;
 };
@@ -300,8 +299,8 @@ function AdminPageContent() {
 
   const loadUsers = async () => {
     const { data } = await supabase
-      .from("admin_users")
-      .select("id, trainer_name, trainer_code, email, role, active")
+      .from("profiles")
+      .select("id, trainer_name, trainer_code, role, active")
       .order("trainer_name", { ascending: true });
 
     setUsers((data as UserItem[] | null) ?? []);
@@ -1727,7 +1726,6 @@ function AdminPageContent() {
     const haystack = [
       userItem.trainer_name,
       userItem.trainer_code,
-      userItem.email ?? "",
       userItem.role,
       userItem.active ? "activo" : "pendiente",
     ]
@@ -2308,7 +2306,6 @@ function AdminPageContent() {
                       <tr>
                         <th>Trainer name</th>
                         <th>Trainer id</th>
-                        <th>Email</th>
                         <th>Rol</th>
                         <th>Estado</th>
                         <th>Acciones</th>
@@ -2319,7 +2316,6 @@ function AdminPageContent() {
                         <tr key={userItem.id}>
                           <td>{userItem.trainer_name}</td>
                           <td>{userItem.trainer_code}</td>
-                          <td>{userItem.email ?? "-"}</td>
                           <td>{userItem.role}</td>
                           <td>{userItem.active ? "Activo" : "Pendiente"}</td>
                           <td>
