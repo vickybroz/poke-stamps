@@ -1305,3 +1305,17 @@ button.user-stamp-slot {
   color: #ffffff;
   cursor: pointer;
 }
+
+.auth-submitted-state {
+  align-items: stretch;
+}
+
+.auth-success-panel {
+  margin: 0;
+  max-width: none;
+  padding: 14px 16px;
+  border: 1px solid #b7e0cb;
+  border-radius: 10px;
+  background: #eef9f2;
+  text-align: left;
+}
