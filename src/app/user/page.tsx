@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { AppNavbar } from "@/components/app-navbar";
 
 type UserState = {
   trainerName: string | null;
@@ -29,16 +30,19 @@ type EventItem = {
 
 type CollectionItem = {
   id: string;
-  event_id: string;
   name: string;
   image_url: string | null;
 };
 
 type StampItem = {
   id: string;
-  collection_id: string;
   name: string;
   image_url: string | null;
+};
+
+type CollectionStampLink = {
+  collection_id: string;
+  stamp_id: string;
 };
 
 type SelectedUserStamp = {
@@ -61,6 +65,7 @@ export default function UserPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [collections, setCollections] = useState<CollectionItem[]>([]);
   const [stamps, setStamps] = useState<StampItem[]>([]);
+  const [collectionStamps, setCollectionStamps] = useState<CollectionStampLink[]>([]);
   const [selectedStamp, setSelectedStamp] = useState<SelectedUserStamp | null>(null);
   const [collapsedEvents, setCollapsedEvents] = useState<string[]>([]);
   const [collapsedCollections, setCollapsedCollections] = useState<string[]>([]);
@@ -125,7 +130,7 @@ export default function UserPage() {
       const eventIds = Array.from(new Set(rows.map((row) => row.event_id)));
       const collectionIds = Array.from(new Set(rows.map((row) => row.collection_id)));
 
-      const [eventsResponse, collectionsResponse, stampsResponse] = await Promise.all([
+      const [eventsResponse, collectionsResponse, collectionStampsResponse] = await Promise.all([
         eventIds.length
           ? supabase
               .from("events")
@@ -135,16 +140,24 @@ export default function UserPage() {
         collectionIds.length
           ? supabase
               .from("collections")
-              .select("id, event_id, name, image_url")
+              .select("id, name, image_url")
               .in("id", collectionIds)
           : Promise.resolve({ data: [] }),
         collectionIds.length
           ? supabase
-              .from("stamps")
-              .select("id, collection_id, name, image_url")
+              .from("collection_stamps")
+              .select("collection_id, stamp_id")
               .in("collection_id", collectionIds)
           : Promise.resolve({ data: [] }),
       ]);
+
+      const relationRows =
+        (collectionStampsResponse.data as CollectionStampLink[] | null) ?? [];
+      const stampIds = Array.from(new Set(relationRows.map((row) => row.stamp_id)));
+
+      const stampsResponse = stampIds.length
+        ? await supabase.from("stamps").select("id, name, image_url").in("id", stampIds)
+        : { data: [] };
 
       setState({
         trainerName: profile.trainer_name,
@@ -155,6 +168,7 @@ export default function UserPage() {
       setUserStamps(rows);
       setEvents((eventsResponse.data as EventItem[] | null) ?? []);
       setCollections((collectionsResponse.data as CollectionItem[] | null) ?? []);
+      setCollectionStamps(relationRows);
       setStamps((stampsResponse.data as StampItem[] | null) ?? []);
     };
 
@@ -165,18 +179,35 @@ export default function UserPage() {
     return events
       .map((eventItem) => {
         const eventCollections = collections
-          .filter((collectionItem) => collectionItem.event_id === eventItem.id)
+          .filter((collectionItem) =>
+            userStamps.some(
+              (userStamp) =>
+                userStamp.event_id === eventItem.id &&
+                userStamp.collection_id === collectionItem.id,
+            ),
+          )
           .map((collectionItem) => {
-            const collectionStamps = stamps
-              .filter((stampItem) => stampItem.collection_id === collectionItem.id)
+            const collectionStampItems = stamps
+              .filter((stampItem) =>
+                collectionStamps.some(
+                  (collectionStamp) =>
+                    collectionStamp.collection_id === collectionItem.id &&
+                    collectionStamp.stamp_id === stampItem.id,
+                ),
+              )
               .map((stampItem) => ({
                 ...stampItem,
-                owned: userStamps.some((userStamp) => userStamp.stamp_id === stampItem.id),
+                owned: userStamps.some(
+                  (userStamp) =>
+                    userStamp.event_id === eventItem.id &&
+                    userStamp.collection_id === collectionItem.id &&
+                    userStamp.stamp_id === stampItem.id,
+                ),
               }));
 
             return {
               ...collectionItem,
-              stamps: collectionStamps,
+              stamps: collectionStampItems,
             };
           });
 
@@ -186,7 +217,7 @@ export default function UserPage() {
         };
       })
       .filter((eventItem) => eventItem.collections.length > 0);
-  }, [collections, events, stamps, userStamps]);
+  }, [collectionStamps, collections, events, stamps, userStamps]);
 
   const formatAwardedAt = (value: string) => {
     const date = new Date(value);
@@ -245,6 +276,7 @@ export default function UserPage() {
 
   return (
     <main className="user-screen">
+      <AppNavbar />
       <section className="user-shell">
         <p className="admin-welcome">Bienvenida, {state.trainerName}</p>
 
@@ -270,7 +302,10 @@ export default function UserPage() {
                       <p className="user-event-subtitle">{eventItem.description}</p>
                     ) : null}
                   </div>
-                  <p className="user-event-date-chip">
+                  <p className="user-event-date-chip user-event-date-chip-desktop">
+                    {eventItem.starts_at} - {eventItem.ends_at ?? "Sin fin"}
+                  </p>
+                  <p className="user-event-date-chip user-event-date-chip-mobile">
                     {eventItem.starts_at} - {eventItem.ends_at ?? "Sin fin"}
                   </p>
                 </button>
@@ -303,9 +338,12 @@ export default function UserPage() {
                                   className="user-stamp-slot owned"
                                   type="button"
                                   onClick={() => {
-                                    const awardedStamp = userStamps.find(
-                                      (userStamp) => userStamp.stamp_id === stampItem.id,
-                                    );
+                                const awardedStamp = userStamps.find(
+                                  (userStamp) =>
+                                    userStamp.event_id === eventItem.id &&
+                                    userStamp.collection_id === collectionItem.id &&
+                                    userStamp.stamp_id === stampItem.id,
+                                );
 
                                     if (!awardedStamp) {
                                       return;

@@ -1,9 +1,10 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { AppNavbar } from "@/components/app-navbar";
 
 type AdminState = {
   trainerName: string | null;
@@ -23,7 +24,6 @@ type EventItem = {
 
 type CollectionItem = {
   id: string;
-  event_id: string;
   name: string;
   description: string | null;
   image_url: string | null;
@@ -31,10 +31,19 @@ type CollectionItem = {
 
 type StampItem = {
   id: string;
-  collection_id: string;
   name: string;
   description: string | null;
   image_url: string | null;
+};
+
+type EventCollectionLink = {
+  event_id: string;
+  collection_id: string;
+};
+
+type CollectionStampLink = {
+  collection_id: string;
+  stamp_id: string;
 };
 
 type UserItem = {
@@ -93,8 +102,9 @@ const IMAGE_BUCKET = "poke-stamp-images";
 const MAX_IMAGE_SIZE_BYTES = 300 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
-export default function AdminPage() {
+function AdminPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [state, setState] = useState<AdminState>({
     trainerName: null,
     error: null,
@@ -104,6 +114,8 @@ export default function AdminPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [collections, setCollections] = useState<CollectionItem[]>([]);
   const [stamps, setStamps] = useState<StampItem[]>([]);
+  const [eventCollections, setEventCollections] = useState<EventCollectionLink[]>([]);
+  const [collectionStamps, setCollectionStamps] = useState<CollectionStampLink[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [imageOptions, setImageOptions] = useState<ImageOption[]>([]);
   const [activeTab, setActiveTab] = useState<AdminTab>("events");
@@ -118,6 +130,7 @@ export default function AdminPage() {
   const [modalMode, setModalMode] = useState<ModalMode>("create");
   const [isSaving, setIsSaving] = useState(false);
   const [openGalleryTarget, setOpenGalleryTarget] = useState<UploadTarget | null>(null);
+  const [isCollectionStampPickerOpen, setIsCollectionStampPickerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [awardTarget, setAwardTarget] = useState<AwardTarget>(null);
   const [trainerCodeInput, setTrainerCodeInput] = useState("");
@@ -143,17 +156,18 @@ export default function AdminPage() {
     ends_at: "",
     description: "",
     image_url: "",
+    collection_ids: [] as string[],
   });
   const [collectionForm, setCollectionForm] = useState({
     id: "",
-    event_id: "",
     name: "",
     description: "",
     image_url: "",
+    event_ids: [] as string[],
+    stamp_ids: [] as string[],
   });
   const [stampForm, setStampForm] = useState({
     id: "",
-    collection_id: "",
     name: "",
     description: "",
     image_url: "",
@@ -172,6 +186,17 @@ export default function AdminPage() {
   const stampSearch = searchTerms.stamps.trim().toLowerCase();
   const gallerySearch = searchTerms.gallery.trim().toLowerCase();
   const userSearch = searchTerms.users.trim().toLowerCase();
+  const queryTabParam = searchParams.get("tab");
+  const queryIdParam = searchParams.get("id");
+  const queryEventIdParam = searchParams.get("eventId");
+  const queryTab: AdminTab | null =
+    queryTabParam === "events" ||
+    queryTabParam === "collections" ||
+    queryTabParam === "stamps" ||
+    queryTabParam === "gallery" ||
+    queryTabParam === "users"
+      ? queryTabParam
+      : null;
 
   const loadImageLibrary = async () => {
     const folders: ImageOption["folder"][] = ["events", "collections", "stamps", "gallery"];
@@ -208,7 +233,7 @@ export default function AdminPage() {
   };
 
   const reloadCollectionSummary = async () => {
-    const { data } = await supabase.from("collections").select("event_id");
+    const { data } = await supabase.from("event_collections").select("event_id");
     const ids = Array.from(
       new Set(
         ((data as Array<{ event_id: string }> | null) ?? []).map((item) => item.event_id),
@@ -218,7 +243,7 @@ export default function AdminPage() {
   };
 
   const reloadStampSummary = async () => {
-    const { data } = await supabase.from("stamps").select("collection_id");
+    const { data } = await supabase.from("collection_stamps").select("collection_id");
     const ids = Array.from(
       new Set(
         ((data as Array<{ collection_id: string }> | null) ?? []).map(
@@ -227,6 +252,22 @@ export default function AdminPage() {
       ),
     );
     setCollectionIdsWithStamps(ids);
+  };
+
+  const loadEventCollections = async () => {
+    const { data } = await supabase
+      .from("event_collections")
+      .select("event_id, collection_id");
+
+    setEventCollections((data as EventCollectionLink[] | null) ?? []);
+  };
+
+  const loadCollectionStamps = async () => {
+    const { data } = await supabase
+      .from("collection_stamps")
+      .select("collection_id, stamp_id");
+
+    setCollectionStamps((data as CollectionStampLink[] | null) ?? []);
   };
 
   const loadEvents = async () => {
@@ -241,7 +282,7 @@ export default function AdminPage() {
   const loadCollections = async () => {
     const { data } = await supabase
       .from("collections")
-      .select("id, event_id, name, description, image_url")
+      .select("id, name, description, image_url")
       .order("created_at", { ascending: false });
 
     setCollections((data as CollectionItem[] | null) ?? []);
@@ -250,7 +291,7 @@ export default function AdminPage() {
   const loadStamps = async () => {
     const { data } = await supabase
       .from("stamps")
-      .select("id, collection_id, name, description, image_url")
+      .select("id, name, description, image_url")
       .order("created_at", { ascending: false });
 
     setStamps((data as StampItem[] | null) ?? []);
@@ -270,6 +311,8 @@ export default function AdminPage() {
       loadEvents(),
       loadCollections(),
       loadStamps(),
+      loadEventCollections(),
+      loadCollectionStamps(),
       loadUsers(),
       loadImageLibrary(),
       reloadCollectionSummary(),
@@ -287,17 +330,18 @@ export default function AdminPage() {
       ends_at: "",
       description: "",
       image_url: "",
+      collection_ids: [],
     });
     setCollectionForm({
       id: "",
-      event_id: selectedEventId ?? "",
       name: "",
       description: "",
       image_url: "",
+      event_ids: selectedEventId ? [selectedEventId] : [],
+      stamp_ids: [],
     });
     setStampForm({
       id: "",
-      collection_id: selectedCollectionId ?? "",
       name: "",
       description: "",
       image_url: "",
@@ -313,15 +357,23 @@ export default function AdminPage() {
   const closeCreateModal = () => {
     setCreateModalTab(null);
     setModalMode("create");
+    setIsCollectionStampPickerOpen(false);
     resetModalState();
   };
 
   const openAwardModal = (stampItem: StampItem) => {
-    const collection = collections.find((item) => item.id === stampItem.collection_id);
-    const event = events.find((item) => item.id === collection?.event_id);
+    const collectionId = selectedCollectionId;
+    const eventId =
+      queryEventIdParam && collectionId
+        ? queryEventIdParam
+        : collectionId
+          ? eventCollections.find((item) => item.collection_id === collectionId)?.event_id ?? null
+          : null;
+    const collection = collections.find((item) => item.id === collectionId);
+    const event = events.find((item) => item.id === eventId);
 
     if (!collection || !event) {
-      setFeedback("No se pudo resolver la coleccion o el evento de esta stamp.");
+      setFeedback("Selecciona una coleccion dentro de un evento para entregar la stamp.");
       return;
     }
 
@@ -341,6 +393,40 @@ export default function AdminPage() {
       collectionId: collection.id,
       collectionName: collection.name,
       eventId: event.id,
+      eventName: event.name,
+    });
+  };
+
+  const openAwardModalWithContext = (
+    stampItem: StampItem,
+    collectionId: string,
+    eventId: string,
+  ) => {
+    const collection = collections.find((item) => item.id === collectionId);
+    const event = events.find((item) => item.id === eventId);
+
+    if (!collection || !event) {
+      setFeedback("No se pudo resolver la coleccion o el evento de esta stamp.");
+      return;
+    }
+
+    setSelectedCollectionId(collectionId);
+    setTrainerCodeInput("");
+    setTrainerLookup({
+      loading: false,
+      name: null,
+      userId: null,
+      error: null,
+    });
+    setIsScannerOpen(false);
+    setScannerError(null);
+    setAwardTarget({
+      stampId: stampItem.id,
+      stampName: stampItem.name,
+      stampImageUrl: stampItem.image_url,
+      collectionId,
+      collectionName: collection.name,
+      eventId,
       eventName: event.name,
     });
   };
@@ -372,6 +458,9 @@ export default function AdminPage() {
         ends_at: item.ends_at ?? "",
         description: item.description ?? "",
         image_url: item.image_url ?? "",
+        collection_ids: eventCollections
+          .filter((link) => link.event_id === item.id)
+          .map((link) => link.collection_id),
       });
       setCreateModalTab("events");
       return;
@@ -380,12 +469,19 @@ export default function AdminPage() {
     if (target === "collection") {
       const item = collections.find((collectionItem) => collectionItem.id === id);
       if (!item) return;
+      const relatedEventIds = eventCollections
+        .filter((link) => link.collection_id === item.id)
+        .map((link) => link.event_id);
+      const relatedStampIds = collectionStamps
+        .filter((link) => link.collection_id === item.id)
+        .map((link) => link.stamp_id);
       setCollectionForm({
         id: item.id,
-        event_id: item.event_id,
         name: item.name,
         description: item.description ?? "",
         image_url: item.image_url ?? "",
+        event_ids: relatedEventIds,
+        stamp_ids: relatedStampIds,
       });
       setCreateModalTab("collections");
       return;
@@ -395,7 +491,6 @@ export default function AdminPage() {
     if (!item) return;
     setStampForm({
       id: item.id,
-      collection_id: item.collection_id,
       name: item.name,
       description: item.description ?? "",
       image_url: item.image_url ?? "",
@@ -706,6 +801,90 @@ export default function AdminPage() {
     setOpenGalleryTarget(null);
   };
 
+  const syncEventCollections = async (eventId: string, collectionIds: string[]) => {
+    const uniqueCollectionIds = Array.from(new Set(collectionIds.filter(Boolean)));
+
+    const { error: deleteError } = await supabase
+      .from("event_collections")
+      .delete()
+      .eq("event_id", eventId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    if (!uniqueCollectionIds.length || !state.userId) {
+      return;
+    }
+
+    const { error: insertError } = await supabase.from("event_collections").insert(
+      uniqueCollectionIds.map((collectionId) => ({
+        event_id: eventId,
+        collection_id: collectionId,
+        created_by: state.userId,
+      })),
+    );
+
+    if (insertError) {
+      throw insertError;
+    }
+  };
+
+  const syncCollectionRelations = async (
+    collectionId: string,
+    eventIds: string[],
+    stampIds: string[],
+  ) => {
+    const uniqueEventIds = Array.from(new Set(eventIds.filter(Boolean)));
+    const uniqueStampIds = Array.from(new Set(stampIds.filter(Boolean)));
+
+    const { error: deleteEventLinksError } = await supabase
+      .from("event_collections")
+      .delete()
+      .eq("collection_id", collectionId);
+
+    if (deleteEventLinksError) {
+      throw deleteEventLinksError;
+    }
+
+    const { error: deleteStampLinksError } = await supabase
+      .from("collection_stamps")
+      .delete()
+      .eq("collection_id", collectionId);
+
+    if (deleteStampLinksError) {
+      throw deleteStampLinksError;
+    }
+
+    if (state.userId && uniqueEventIds.length) {
+      const { error: insertEventLinksError } = await supabase.from("event_collections").insert(
+        uniqueEventIds.map((eventId) => ({
+          event_id: eventId,
+          collection_id: collectionId,
+          created_by: state.userId,
+        })),
+      );
+
+      if (insertEventLinksError) {
+        throw insertEventLinksError;
+      }
+    }
+
+    if (state.userId && uniqueStampIds.length) {
+      const { error: insertStampLinksError } = await supabase.from("collection_stamps").insert(
+        uniqueStampIds.map((stampId) => ({
+          collection_id: collectionId,
+          stamp_id: stampId,
+          created_by: state.userId,
+        })),
+      );
+
+      if (insertStampLinksError) {
+        throw insertStampLinksError;
+      }
+    }
+  };
+
   const handleSaveEvent = async () => {
     if (!state.userId || !eventForm.name || !eventForm.starts_at) {
       setFeedback("Completa nombre y fecha de inicio.");
@@ -724,11 +903,18 @@ export default function AdminPage() {
         image_url: eventForm.image_url || null,
         created_by: state.userId,
       };
-      const { error } = eventForm.id
-        ? await supabase.from("events").update(payload).eq("id", eventForm.id)
-        : await supabase.from("events").insert(payload);
+      let eventId = eventForm.id;
 
-      if (error) throw error;
+      if (eventForm.id) {
+        const { error } = await supabase.from("events").update(payload).eq("id", eventForm.id);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from("events").insert(payload).select("id").single();
+        if (error) throw error;
+        eventId = data.id;
+      }
+
+      await syncEventCollections(eventId, eventForm.collection_ids);
 
       await reloadAll();
       setFeedback(eventForm.id ? "Evento actualizado." : "Evento creado.");
@@ -741,8 +927,8 @@ export default function AdminPage() {
   };
 
   const handleSaveCollection = async () => {
-    if (!state.userId || !collectionForm.event_id || !collectionForm.name) {
-      setFeedback("Selecciona evento y completa el nombre.");
+    if (!state.userId || !collectionForm.name) {
+      setFeedback("Completa el nombre de la coleccion.");
       return;
     }
 
@@ -751,17 +937,34 @@ export default function AdminPage() {
 
     try {
       const payload = {
-        event_id: collectionForm.event_id,
         name: collectionForm.name,
         description: collectionForm.description || null,
         image_url: collectionForm.image_url || null,
         created_by: state.userId,
       };
-      const { error } = collectionForm.id
-        ? await supabase.from("collections").update(payload).eq("id", collectionForm.id)
-        : await supabase.from("collections").insert(payload);
+      let collectionId = collectionForm.id;
 
-      if (error) throw error;
+      if (collectionForm.id) {
+        const { error } = await supabase
+          .from("collections")
+          .update(payload)
+          .eq("id", collectionForm.id);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("collections")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (error) throw error;
+        collectionId = data.id;
+      }
+
+      await syncCollectionRelations(
+        collectionId,
+        collectionForm.event_ids,
+        collectionForm.stamp_ids,
+      );
 
       await reloadAll();
       setFeedback(collectionForm.id ? "Coleccion actualizada." : "Coleccion creada.");
@@ -774,8 +977,8 @@ export default function AdminPage() {
   };
 
   const handleSaveStamp = async () => {
-    if (!state.userId || !stampForm.collection_id || !stampForm.name) {
-      setFeedback("Selecciona coleccion y completa el nombre.");
+    if (!state.userId || !stampForm.name) {
+      setFeedback("Completa el nombre.");
       return;
     }
 
@@ -784,7 +987,6 @@ export default function AdminPage() {
 
     try {
       const payload = {
-        collection_id: stampForm.collection_id,
         name: stampForm.name,
         description: stampForm.description || null,
         image_url: stampForm.image_url || null,
@@ -920,46 +1122,27 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    const loadCollections = async () => {
-      const query = supabase
-        .from("collections")
-        .select("id, event_id, name, description, image_url")
-        .order("created_at", { ascending: false });
+    if (!queryTab || !queryIdParam) {
+      return;
+    }
 
-      const { data } = selectedEventId ? await query.eq("event_id", selectedEventId) : await query;
+    setActiveTab(queryTab);
 
-      setCollections((data as CollectionItem[] | null) ?? []);
+    if (queryTab === "events") {
+      setSelectedEventId(queryIdParam);
+      setExpandedEventId(queryIdParam);
+      return;
+    }
 
-      if (selectedEventId && selectedCollectionId) {
-        const exists = ((data as CollectionItem[] | null) ?? []).some(
-          (item) => item.id === selectedCollectionId,
-        );
-
-        if (!exists) {
-          setSelectedCollectionId(null);
-        }
+    if (queryTab === "collections") {
+      setSelectedCollectionId(queryIdParam);
+      setExpandedCollectionId(queryIdParam);
+      if (queryEventIdParam) {
+        setSelectedEventId(queryEventIdParam);
       }
-    };
-
-    void loadCollections();
-  }, [selectedEventId, selectedCollectionId]);
-
-  useEffect(() => {
-    const loadStamps = async () => {
-      const query = supabase
-        .from("stamps")
-        .select("id, collection_id, name, description, image_url")
-        .order("created_at", { ascending: false });
-
-      const { data } = selectedCollectionId
-        ? await query.eq("collection_id", selectedCollectionId)
-        : await query;
-
-      setStamps((data as StampItem[] | null) ?? []);
-    };
-
-    void loadStamps();
-  }, [selectedCollectionId]);
+      return;
+    }
+  }, [queryEventIdParam, queryIdParam, queryTab]);
 
   const renderCreateModal = () => {
     if (!createModalTab) return null;
@@ -1023,6 +1206,28 @@ export default function AdminPage() {
                 {renderImageControls("event", eventForm.image_url, (url) =>
                   setEventForm((prev) => ({ ...prev, image_url: url })),
                 )}
+                <div className="admin-relation-picker">
+                  <p className="admin-muted admin-muted-small">Colecciones del evento</p>
+                  <div className="admin-check-list">
+                    {collections.map((collectionItem) => (
+                      <label key={collectionItem.id} className="admin-check-item">
+                        <input
+                          type="checkbox"
+                          checked={eventForm.collection_ids.includes(collectionItem.id)}
+                          onChange={(event) =>
+                            setEventForm((prev) => ({
+                              ...prev,
+                              collection_ids: event.target.checked
+                                ? [...prev.collection_ids, collectionItem.id]
+                                : prev.collection_ids.filter((id) => id !== collectionItem.id),
+                            }))
+                          }
+                        />
+                        <span>{collectionItem.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <button
                   className="access-button"
                   type="button"
@@ -1036,20 +1241,9 @@ export default function AdminPage() {
 
             {createModalTab === "collections" ? (
               <>
-                <select
-                  className="auth-input"
-                  value={collectionForm.event_id}
-                  onChange={(event) =>
-                    setCollectionForm((prev) => ({ ...prev, event_id: event.target.value }))
-                  }
-                >
-                  <option value="">Selecciona un evento</option>
-                  {events.map((eventItem) => (
-                    <option key={eventItem.id} value={eventItem.id}>
-                      {eventItem.name}
-                    </option>
-                  ))}
-                </select>
+                {renderImageControls("collection", collectionForm.image_url, (url) =>
+                  setCollectionForm((prev) => ({ ...prev, image_url: url })),
+                )}
                 <input
                   className="auth-input"
                   placeholder="Nombre de coleccion"
@@ -1066,9 +1260,72 @@ export default function AdminPage() {
                     setCollectionForm((prev) => ({ ...prev, description: event.target.value }))
                   }
                 />
-                {renderImageControls("collection", collectionForm.image_url, (url) =>
-                  setCollectionForm((prev) => ({ ...prev, image_url: url })),
-                )}
+                <div className="admin-relation-picker">
+                  <div className="admin-relation-header">
+                    <p className="admin-muted admin-muted-small">Stamps de la coleccion</p>
+                    <button
+                      type="button"
+                      className="admin-mini-btn"
+                      onClick={() => setIsCollectionStampPickerOpen(true)}
+                    >
+                      Agregar stamps
+                    </button>
+                  </div>
+                  <div className="admin-stamp-select-grid">
+                    {stamps
+                      .filter((stampItem) => collectionForm.stamp_ids.includes(stampItem.id))
+                      .map((stampItem) => (
+                      <label key={stampItem.id} className="admin-stamp-select-card">
+                        <input
+                          type="checkbox"
+                          checked={collectionForm.stamp_ids.includes(stampItem.id)}
+                          onChange={(event) =>
+                            setCollectionForm((prev) => ({
+                              ...prev,
+                              stamp_ids: event.target.checked
+                                ? [...prev.stamp_ids, stampItem.id]
+                                : prev.stamp_ids.filter((id) => id !== stampItem.id),
+                            }))
+                          }
+                        />
+                        {stampItem.image_url ? (
+                          <img
+                            src={stampItem.image_url}
+                            alt={stampItem.name}
+                            className="admin-stamp-select-thumb"
+                          />
+                        ) : (
+                          <span className="admin-stamp-placeholder admin-stamp-select-thumb">
+                            Sin imagen
+                          </span>
+                        )}
+                        <span className="admin-stamp-select-name">{stampItem.name}</span>
+                      </label>
+                      ))}
+                  </div>
+                </div>
+                <div className="admin-relation-picker">
+                  <p className="admin-muted admin-muted-small">Eventos donde aparece</p>
+                  <div className="admin-check-list">
+                    {events.map((eventItem) => (
+                      <label key={eventItem.id} className="admin-check-item">
+                        <input
+                          type="checkbox"
+                          checked={collectionForm.event_ids.includes(eventItem.id)}
+                          onChange={(event) =>
+                            setCollectionForm((prev) => ({
+                              ...prev,
+                              event_ids: event.target.checked
+                                ? [...prev.event_ids, eventItem.id]
+                                : prev.event_ids.filter((id) => id !== eventItem.id),
+                            }))
+                          }
+                        />
+                        <span>{eventItem.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <button
                   className="access-button"
                   type="button"
@@ -1082,20 +1339,6 @@ export default function AdminPage() {
 
             {createModalTab === "stamps" ? (
               <>
-                <select
-                  className="auth-input"
-                  value={stampForm.collection_id}
-                  onChange={(event) =>
-                    setStampForm((prev) => ({ ...prev, collection_id: event.target.value }))
-                  }
-                >
-                  <option value="">Selecciona una coleccion</option>
-                  {collections.map((collectionItem) => (
-                    <option key={collectionItem.id} value={collectionItem.id}>
-                      {collectionItem.name}
-                    </option>
-                  ))}
-                </select>
                 <input
                   className="auth-input"
                   placeholder="Nombre de stamp"
@@ -1296,7 +1539,92 @@ export default function AdminPage() {
     );
   };
 
+  const renderCollectionStampPickerModal = () => {
+    if (!isCollectionStampPickerOpen) {
+      return null;
+    }
+
+    return (
+      <div
+        className="admin-modal-backdrop"
+        onClick={() => setIsCollectionStampPickerOpen(false)}
+      >
+        <div
+          className="admin-modal admin-modal-large"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="admin-modal-header">
+            <h2 className="admin-box-title">Agregar stamps a la coleccion</h2>
+            <button
+              type="button"
+              className="admin-icon-close"
+              onClick={() => setIsCollectionStampPickerOpen(false)}
+              aria-label="Cerrar"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                <path
+                  d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.41 1.42Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div className="admin-stamp-select-grid">
+            {stamps.map((stampItem) => (
+              <label key={stampItem.id} className="admin-stamp-select-card">
+                <input
+                  type="checkbox"
+                  checked={collectionForm.stamp_ids.includes(stampItem.id)}
+                  onChange={(event) =>
+                    setCollectionForm((prev) => ({
+                      ...prev,
+                      stamp_ids: event.target.checked
+                        ? [...prev.stamp_ids, stampItem.id]
+                        : prev.stamp_ids.filter((id) => id !== stampItem.id),
+                    }))
+                  }
+                />
+                {stampItem.image_url ? (
+                  <img
+                    src={stampItem.image_url}
+                    alt={stampItem.name}
+                    className="admin-stamp-select-thumb"
+                  />
+                ) : (
+                  <span className="admin-stamp-placeholder admin-stamp-select-thumb">
+                    Sin imagen
+                  </span>
+                )}
+                <span className="admin-stamp-select-name">{stampItem.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const getEventCollectionIds = (eventId: string) =>
+    eventCollections
+      .filter((link) => link.event_id === eventId)
+      .map((link) => link.collection_id);
+
+  const getCollectionEventIds = (collectionId: string) =>
+    eventCollections
+      .filter((link) => link.collection_id === collectionId)
+      .map((link) => link.event_id);
+
+  const getCollectionStampIds = (collectionId: string) =>
+    collectionStamps
+      .filter((link) => link.collection_id === collectionId)
+      .map((link) => link.stamp_id);
+
   const filteredEvents = events.filter((eventItem) => {
+    if (queryTab === "events" && queryIdParam) {
+      return eventItem.id === queryIdParam;
+    }
+
     if (!eventSearch) return true;
     const haystack = [
       eventItem.name,
@@ -1310,13 +1638,22 @@ export default function AdminPage() {
   });
 
   const filteredCollections = collections.filter((collectionItem) => {
+    if (queryTab === "collections" && queryIdParam) {
+      return collectionItem.id === queryIdParam;
+    }
+
+    if (selectedEventId && !getEventCollectionIds(selectedEventId).includes(collectionItem.id)) {
+      return false;
+    }
+
     if (!collectionSearch) return true;
-    const eventName =
-      events.find((eventItem) => eventItem.id === collectionItem.event_id)?.name ?? "";
+    const eventNames = getCollectionEventIds(collectionItem.id)
+      .map((eventId) => events.find((eventItem) => eventItem.id === eventId)?.name ?? "")
+      .join(" ");
     const haystack = [
       collectionItem.name,
       collectionItem.description ?? "",
-      eventName,
+      eventNames,
     ]
       .join(" ")
       .toLowerCase();
@@ -1324,14 +1661,23 @@ export default function AdminPage() {
   });
 
   const filteredStamps = stamps.filter((stampItem) => {
+    if (queryTab === "stamps" && queryIdParam) {
+      return stampItem.id === queryIdParam;
+    }
+
+    if (selectedCollectionId && !getCollectionStampIds(selectedCollectionId).includes(stampItem.id)) {
+      return false;
+    }
+
     if (!stampSearch) return true;
-    const collectionName =
-      collections.find((collectionItem) => collectionItem.id === stampItem.collection_id)?.name ??
-      "";
+    const collectionNames = collectionStamps
+      .filter((link) => link.stamp_id === stampItem.id)
+      .map((link) => collections.find((collectionItem) => collectionItem.id === link.collection_id)?.name ?? "")
+      .join(" ");
     const haystack = [
       stampItem.name,
       stampItem.description ?? "",
-      collectionName,
+      collectionNames,
     ]
       .join(" ")
       .toLowerCase();
@@ -1339,12 +1685,20 @@ export default function AdminPage() {
   });
 
   const filteredGalleryImages = imageOptions.filter((image) => {
+    if (queryTab === "gallery" && queryIdParam) {
+      return image.path === queryIdParam;
+    }
+
     if (!gallerySearch) return true;
     const haystack = [image.label, image.folder, image.path].join(" ").toLowerCase();
     return haystack.includes(gallerySearch);
   });
 
   const filteredUsers = users.filter((userItem) => {
+    if (queryTab === "users" && queryIdParam) {
+      return userItem.id === queryIdParam;
+    }
+
     if (!userSearch) return true;
     const haystack = [
       userItem.trainer_name,
@@ -1436,6 +1790,7 @@ export default function AdminPage() {
 
   return (
     <main className="admin-screen">
+      <AppNavbar />
       <section className="admin-card">
         <h1 className="admin-title">Panel de Administracion</h1>
         <p className="admin-welcome">Bienvenida, {state.trainerName}</p>
@@ -1561,15 +1916,41 @@ export default function AdminPage() {
                     </div>
                     {expandedEventId === eventItem.id ? (
                       <div className="admin-expanded">
-                        <p className="admin-muted admin-muted-small">
-                          Inicio: {eventItem.starts_at}
-                        </p>
-                        <p className="admin-muted admin-muted-small">
-                          Fin: {eventItem.ends_at ?? "Sin fecha de fin"}
-                        </p>
                         {eventItem.description ? (
                           <p className="admin-muted admin-muted-small">{eventItem.description}</p>
                         ) : null}
+                        <p className="admin-muted admin-muted-small">
+                          {eventItem.starts_at} - {eventItem.ends_at ?? "Sin fecha de fin"}
+                        </p>
+                        <div className="admin-event-collections">
+                          {getEventCollectionIds(eventItem.id).length ? (
+                            <ul className="admin-inline-list">
+                              {collections
+                                .filter((collectionItem) =>
+                                  getEventCollectionIds(eventItem.id).includes(collectionItem.id),
+                                )
+                                .map((collectionItem) => (
+                                  <li key={collectionItem.id} className="admin-inline-list-item">
+                                    <button
+                                      type="button"
+                                      className="admin-inline-link"
+                                      onClick={() =>
+                                        router.push(
+                                          `/admin?tab=collections&id=${collectionItem.id}&eventId=${eventItem.id}`,
+                                        )
+                                      }
+                                    >
+                                      {collectionItem.name}
+                                    </button>
+                                  </li>
+                                ))}
+                            </ul>
+                          ) : (
+                            <p className="admin-muted admin-muted-small">
+                              No tiene colecciones asignadas.
+                            </p>
+                          )}
+                        </div>
                       </div>
                     ) : null}
                   </li>
@@ -1625,8 +2006,17 @@ export default function AdminPage() {
                         />
                         <span className="admin-item-name">{collectionItem.name}</span>
                         <span className="admin-date-chip">
-                          {events.find((eventItem) => eventItem.id === collectionItem.event_id)?.name ??
-                            "Sin evento"}
+                          {(() => {
+                            const relatedEvents = getCollectionEventIds(collectionItem.id);
+                            if (!relatedEvents.length) return "Sin eventos";
+                            if (relatedEvents.length === 1) {
+                              return (
+                                events.find((eventItem) => eventItem.id === relatedEvents[0])?.name ??
+                                "1 evento"
+                              );
+                            }
+                            return `${relatedEvents.length} eventos`;
+                          })()}
                         </span>
                       </button>
                       <div className="admin-hover-actions">
@@ -1671,15 +2061,40 @@ export default function AdminPage() {
                             {collectionItem.description}
                           </p>
                         ) : null}
+                        <p className="admin-muted admin-muted-small">
+                          Eventos:{" "}
+                          {getCollectionEventIds(collectionItem.id)
+                            .map((eventId) => events.find((eventItem) => eventItem.id === eventId)?.name)
+                            .filter(Boolean)
+                            .join(", ") || "Sin eventos"}
+                        </p>
                         <div className="admin-expanded-stamps">
                           {stamps
-                            .filter((stampItem) => stampItem.collection_id === collectionItem.id)
+                            .filter((stampItem) =>
+                              getCollectionStampIds(collectionItem.id).includes(stampItem.id),
+                            )
                             .map((stampItem) => (
                               <button
                                 key={stampItem.id}
                                 type="button"
                                 className="admin-stamp-card"
-                                onClick={() => openAwardModal(stampItem)}
+                                onClick={() => {
+                                  const eventId =
+                                    queryEventIdParam && getCollectionEventIds(collectionItem.id).includes(queryEventIdParam)
+                                      ? queryEventIdParam
+                                      : getCollectionEventIds(collectionItem.id)[0];
+
+                                  if (!eventId) {
+                                    setFeedback("Relaciona esta coleccion con un evento para entregar stamps.");
+                                    return;
+                                  }
+
+                                  openAwardModalWithContext(
+                                    stampItem,
+                                    collectionItem.id,
+                                    eventId,
+                                  );
+                                }}
                               >
                                 {stampItem.image_url ? (
                                   <img
@@ -1893,8 +2308,25 @@ export default function AdminPage() {
         {renderCreateModal()}
         {renderDeleteModal()}
         {renderAwardModal()}
+        {renderCollectionStampPickerModal()}
         {renderGalleryPickerModal()}
       </section>
     </main>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="admin-screen">
+          <section className="admin-card">
+            <p className="admin-muted">Cargando...</p>
+          </section>
+        </main>
+      }
+    >
+      <AdminPageContent />
+    </Suspense>
   );
 }

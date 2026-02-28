@@ -176,6 +176,33 @@ body {
   font-size: 1.5rem;
 }
 
+.app-navbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.app-navbar-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #bfd3e7;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #264f81;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.app-navbar-link:hover {
+  background: #eef4fb;
+}
+
 .admin-welcome {
   margin: 16px 0 0;
   color: #345a85;
@@ -389,6 +416,52 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.admin-relation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.admin-stamp-select-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.admin-stamp-select-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe7f4;
+  border-radius: 10px;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: center;
+}
+
+.admin-stamp-select-card input {
+  align-self: flex-start;
+}
+
+.admin-stamp-select-thumb {
+  width: 100%;
+  max-width: 84px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 1px solid #dbe7f4;
+  object-fit: cover;
+}
+
+.admin-stamp-select-name {
+  color: #214a7d;
+  font-size: 0.78rem;
+  line-height: 1.3;
 }
 
 .admin-image-actions {
@@ -872,6 +945,39 @@ body {
   border-top: 1px solid #dbe7f4;
 }
 
+.admin-event-collections {
+  margin-top: 4px;
+}
+
+.admin-inline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-inline-list-item {
+  color: #264f81;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.admin-inline-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #2f6ac9;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-inline-link:hover {
+  text-decoration: underline;
+}
+
 .admin-collection-preview {
   width: 100%;
   max-width: 220px;
@@ -982,6 +1088,43 @@ body {
   font-weight: 700;
   white-space: nowrap;
   flex: 0 0 auto;
+}
+
+.user-event-date-chip-mobile {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .user-event-header {
+    height: auto;
+    max-height: none;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 0 12px 10px 0;
+  }
+
+  .user-event-thumb {
+    width: 88px;
+    height: 88px;
+  }
+
+  .user-event-copy {
+    padding: 8px 0 0;
+  }
+
+  .user-event-date-chip-desktop {
+    display: none;
+  }
+
+  .user-event-date-chip-mobile {
+    display: inline-flex;
+  }
+
+  .user-event-date-chip {
+    margin-top: 6px;
+    white-space: normal;
+    align-self: flex-start;
+  }
 }
 
 .user-collections {
