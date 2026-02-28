@@ -412,6 +412,7 @@ export default function AdminPage() {
           trainerName: null,
           error: "Necesitas iniciar sesion para acceder a esta pagina.",
           loading: false,
+          userId: null,
         });
         return;
       }
@@ -427,6 +428,7 @@ export default function AdminPage() {
           trainerName: null,
           error: "No se encontro tu perfil. Contacta a un administrador.",
           loading: false,
+          userId: null,
         });
         return;
       }
@@ -436,6 +438,7 @@ export default function AdminPage() {
           trainerName: null,
           error: "Tu cuenta esta desactivada.",
           loading: false,
+          userId: null,
         });
         return;
       }
