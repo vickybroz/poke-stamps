@@ -708,9 +708,10 @@ function AdminPageContent() {
               return;
             }
 
-            const normalizedCode = rawValue.replace(/\D/g, "");
+            const digitsOnly = rawValue.replace(/\D/g, "");
+            const normalizedCode = digitsOnly.slice(-12);
 
-            if (!normalizedCode) {
+            if (normalizedCode.length !== 12) {
               setScannerError("El QR no contiene un codigo de entrenador valido.");
               return;
             }
@@ -2368,3 +2369,4 @@ export default function AdminPage() {
     </Suspense>
   );
 }
+
