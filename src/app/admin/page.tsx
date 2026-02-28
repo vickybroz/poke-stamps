@@ -52,6 +52,7 @@ type UserItem = {
   trainer_code: string;
   email: string | null;
   role: string;
+  active: boolean;
 };
 
 type AdminTab = "events" | "collections" | "stamps" | "gallery" | "users";
@@ -300,7 +301,7 @@ function AdminPageContent() {
   const loadUsers = async () => {
     const { data } = await supabase
       .from("admin_users")
-      .select("id, trainer_name, trainer_code, email, role")
+      .select("id, trainer_name, trainer_code, email, role, active")
       .order("trainer_name", { ascending: true });
 
     setUsers((data as UserItem[] | null) ?? []);
@@ -1081,6 +1082,29 @@ function AdminPageContent() {
     }
   };
 
+  const handleApproveUser = async (userId: string) => {
+    setIsSaving(true);
+    setFeedback(null);
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ active: true })
+        .eq("id", userId);
+
+      if (error) {
+        throw error;
+      }
+
+      await loadUsers();
+      setFeedback("Usuario autorizado.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "No se pudo autorizar el usuario.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleAwardStamp = async () => {
     if (!state.userId || !awardTarget || !trainerCodeInput.trim()) {
       setFeedback("Ingresa un codigo de entrenador.");
@@ -1705,6 +1729,7 @@ function AdminPageContent() {
       userItem.trainer_code,
       userItem.email ?? "",
       userItem.role,
+      userItem.active ? "activo" : "pendiente",
     ]
       .join(" ")
       .toLowerCase();
@@ -2285,6 +2310,8 @@ function AdminPageContent() {
                         <th>Trainer id</th>
                         <th>Email</th>
                         <th>Rol</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2294,6 +2321,21 @@ function AdminPageContent() {
                           <td>{userItem.trainer_code}</td>
                           <td>{userItem.email ?? "-"}</td>
                           <td>{userItem.role}</td>
+                          <td>{userItem.active ? "Activo" : "Pendiente"}</td>
+                          <td>
+                            {!userItem.active ? (
+                              <button
+                                type="button"
+                                className="admin-mini-btn admin-mini-btn-primary"
+                                onClick={() => handleApproveUser(userItem.id)}
+                                disabled={isSaving}
+                              >
+                                Autorizar
+                              </button>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

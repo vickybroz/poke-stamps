@@ -113,6 +113,48 @@ body {
   transform: none;
 }
 
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid #bfd3e7;
+  background: #f8fbff;
+  color: #264f81;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.secondary-button:hover {
+  background: #eef4fb;
+}
+
+.secondary-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.auth-scanner-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe7f4;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.auth-scanner-video {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  background: #0f172a;
+  object-fit: cover;
+}
+
 .auth-note {
   margin: 12px 0 0;
   max-width: 320px;
