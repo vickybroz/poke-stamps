@@ -55,7 +55,7 @@ type UserItem = {
 };
 
 type AdminTab = "events" | "collections" | "stamps" | "gallery" | "users";
-type UploadTarget = "event" | "collection" | "stamp";
+type UploadTarget = "event" | "collection" | "stamp" | "user";
 type ModalMode = "create" | "edit";
 type DeleteTarget = {
   type: UploadTarget | "gallery";
@@ -171,6 +171,13 @@ function AdminPageContent() {
     name: "",
     description: "",
     image_url: "",
+  });
+  const [userForm, setUserForm] = useState({
+    id: "",
+    trainer_name: "",
+    trainer_code: "",
+    role: "user",
+    active: true,
   });
   const [galleryForm, setGalleryForm] = useState<{
     file: File | null;
@@ -346,6 +353,13 @@ function AdminPageContent() {
       description: "",
       image_url: "",
     });
+    setUserForm({
+      id: "",
+      trainer_name: "",
+      trainer_code: "",
+      role: "user",
+      active: true,
+    });
   };
 
   const openCreateModal = (tab: AdminTab) => {
@@ -487,15 +501,29 @@ function AdminPageContent() {
       return;
     }
 
-    const item = stamps.find((stampItem) => stampItem.id === id);
+    if (target === "stamp") {
+      const item = stamps.find((stampItem) => stampItem.id === id);
+      if (!item) return;
+      setStampForm({
+        id: item.id,
+        name: item.name,
+        description: item.description ?? "",
+        image_url: item.image_url ?? "",
+      });
+      setCreateModalTab("stamps");
+      return;
+    }
+
+    const item = users.find((userItem) => userItem.id === id);
     if (!item) return;
-    setStampForm({
+    setUserForm({
       id: item.id,
-      name: item.name,
-      description: item.description ?? "",
-      image_url: item.image_url ?? "",
+      trainer_name: item.trainer_name,
+      trainer_code: item.trainer_code,
+      role: item.role,
+      active: item.active,
     });
-    setCreateModalTab("stamps");
+    setCreateModalTab("users");
   };
 
   useEffect(() => {
@@ -538,10 +566,10 @@ function AdminPageContent() {
         return;
       }
 
-      if (profile.role !== "admin") {
+      if (profile.role !== "admin" && profile.role !== "mod") {
         setState({
           trainerName: null,
-          error: "No tienes permisos de administrador.",
+          error: "No tienes permisos de staff.",
           loading: false,
           userId: null,
         });
@@ -1009,6 +1037,43 @@ function AdminPageContent() {
     }
   };
 
+  const handleSaveUser = async () => {
+    if (!userForm.id || !userForm.trainer_name.trim() || !userForm.trainer_code.trim()) {
+      setFeedback("Completa el nombre y el codigo del entrenador.");
+      return;
+    }
+
+    if (userForm.role !== "user" && userForm.role !== "mod") {
+      setFeedback("Solo puedes asignar los roles user o mod.");
+      return;
+    }
+
+    setIsSaving(true);
+    setFeedback(null);
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          trainer_name: userForm.trainer_name.trim(),
+          trainer_code: userForm.trainer_code.trim(),
+          role: userForm.role,
+          active: userForm.active,
+        })
+        .eq("id", userForm.id);
+
+      if (error) throw error;
+
+      await reloadAll();
+      setFeedback("Usuario actualizado.");
+      closeCreateModal();
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "No se pudo actualizar el usuario.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleCreateGalleryImage = async () => {
     if (!galleryForm.file) {
       setFeedback("Selecciona una imagen.");
@@ -1069,6 +1134,12 @@ function AdminPageContent() {
       }
       if (deleteTarget.type === "gallery") {
         const { error } = await supabase.storage.from(IMAGE_BUCKET).remove([deleteTarget.id]);
+        if (error) throw error;
+      }
+      if (deleteTarget.type === "user") {
+        const { error } = await supabase.rpc("admin_delete_user", {
+          target_user_id: deleteTarget.id,
+        });
         if (error) throw error;
       }
 
@@ -1357,6 +1428,55 @@ function AdminPageContent() {
                   disabled={isSaving}
                 >
                   {isSaving ? "Guardando..." : isEditMode ? "Guardar cambios" : "Crear coleccion"}
+                </button>
+              </>
+            ) : null}
+
+            {createModalTab === "users" ? (
+              <>
+                <input
+                  className="auth-input"
+                  placeholder="Nombre de entrenador"
+                  value={userForm.trainer_name}
+                  onChange={(event) =>
+                    setUserForm((prev) => ({ ...prev, trainer_name: event.target.value }))
+                  }
+                />
+                <input
+                  className="auth-input"
+                  placeholder="Codigo de entrenador"
+                  value={userForm.trainer_code}
+                  onChange={(event) =>
+                    setUserForm((prev) => ({ ...prev, trainer_code: event.target.value }))
+                  }
+                />
+                <select
+                  className="auth-input"
+                  value={userForm.role}
+                  onChange={(event) =>
+                    setUserForm((prev) => ({ ...prev, role: event.target.value }))
+                  }
+                >
+                  <option value="user">user</option>
+                  <option value="mod">mod</option>
+                </select>
+                <label className="admin-check-item">
+                  <input
+                    type="checkbox"
+                    checked={userForm.active}
+                    onChange={(event) =>
+                      setUserForm((prev) => ({ ...prev, active: event.target.checked }))
+                    }
+                  />
+                  <span>Usuario habilitado</span>
+                </label>
+                <button
+                  className="access-button"
+                  type="button"
+                  onClick={handleSaveUser}
+                  disabled={isSaving}
+                >
+                  {isSaving ? "Guardando..." : "Guardar cambios"}
                 </button>
               </>
             ) : null}
@@ -2320,15 +2440,51 @@ function AdminPageContent() {
                           <td>{userItem.role}</td>
                           <td>{userItem.active ? "Activo" : "Pendiente"}</td>
                           <td>
-                            {!userItem.active ? (
-                              <button
-                                type="button"
-                                className="admin-mini-btn admin-mini-btn-primary"
-                                onClick={() => handleApproveUser(userItem.id)}
-                                disabled={isSaving}
-                              >
-                                Autorizar
-                              </button>
+                            {userItem.role !== "admin" ? (
+                              <div className="admin-users-actions">
+                                {!userItem.active ? (
+                                  <button
+                                    type="button"
+                                    className="admin-mini-btn admin-mini-btn-primary"
+                                    onClick={() => handleApproveUser(userItem.id)}
+                                    disabled={isSaving}
+                                  >
+                                    Autorizar
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="admin-action-btn admin-action-btn-edit"
+                                  aria-label={`Editar ${userItem.trainer_name}`}
+                                  onClick={() => openEditModal("user", userItem.id)}
+                                >
+                                  <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                                    <path
+                                      d="m3 17.25 9.06-9.06 3.75 3.75L6.75 21H3v-3.75Zm14.71-9.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75 2.13-1.79Z"
+                                      fill="currentColor"
+                                    />
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="admin-action-btn admin-action-btn-delete"
+                                  aria-label={`Borrar ${userItem.trainer_name}`}
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: "user",
+                                      id: userItem.id,
+                                      name: userItem.trainer_name,
+                                    })
+                                  }
+                                >
+                                  <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                                    <path
+                                      d="M9 3h6l1 1h4v2H4V4h4l1-1Zm1 6h2v8h-2V9Zm4 0h2v8h-2V9ZM6 7h12l-1 14H7L6 7Z"
+                                      fill="currentColor"
+                                    />
+                                  </svg>
+                                </button>
+                              </div>
                             ) : (
                               "-"
                             )}

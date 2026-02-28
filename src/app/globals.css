@@ -817,6 +817,12 @@ body {
   color: #58779d;
 }
 
+.admin-users-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .admin-gallery-card-thumb {
   width: 100%;
   aspect-ratio: 1;

@@ -177,7 +177,7 @@ export default function Home() {
         }
 
         if (!profile.active) {
-          setError("Tu cuenta esta desactivada.");
+          setError("Pendiente: usuario no habilitado todavia.");
           return;
         }
 
@@ -380,6 +380,7 @@ export default function Home() {
     </main>
   );
 }
+
 
 
 
