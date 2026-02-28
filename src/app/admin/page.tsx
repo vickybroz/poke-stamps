@@ -54,7 +54,7 @@ type UserItem = {
   active: boolean;
 };
 
-type AdminTab = "events" | "collections" | "stamps" | "gallery" | "users";
+type AdminTab = "events" | "collections" | "stamps" | "albums" | "gallery" | "users";
 type UploadTarget = "event" | "collection" | "stamp" | "user";
 type ModalMode = "create" | "edit";
 type DeleteTarget = {
@@ -146,6 +146,7 @@ function AdminPageContent() {
     events: "",
     collections: "",
     stamps: "",
+    albums: "",
     gallery: "",
     users: "",
   });
@@ -191,6 +192,7 @@ function AdminPageContent() {
   const eventSearch = searchTerms.events.trim().toLowerCase();
   const collectionSearch = searchTerms.collections.trim().toLowerCase();
   const stampSearch = searchTerms.stamps.trim().toLowerCase();
+  const albumSearch = searchTerms.albums.trim().toLowerCase();
   const gallerySearch = searchTerms.gallery.trim().toLowerCase();
   const userSearch = searchTerms.users.trim().toLowerCase();
   const queryTabParam = searchParams.get("tab");
@@ -200,6 +202,7 @@ function AdminPageContent() {
     queryTabParam === "events" ||
     queryTabParam === "collections" ||
     queryTabParam === "stamps" ||
+    queryTabParam === "albums" ||
     queryTabParam === "gallery" ||
     queryTabParam === "users"
       ? queryTabParam
@@ -1855,6 +1858,32 @@ function AdminPageContent() {
     return haystack.includes(userSearch);
   });
 
+  const filteredAlbumEvents = events.filter((eventItem) => {
+    if (!albumSearch) return true;
+
+    const relatedCollections = collections.filter((collectionItem) =>
+      getEventCollectionIds(eventItem.id).includes(collectionItem.id),
+    );
+    const relatedStampNames = relatedCollections
+      .flatMap((collectionItem) =>
+        stamps
+          .filter((stampItem) => getCollectionStampIds(collectionItem.id).includes(stampItem.id))
+          .map((stampItem) => stampItem.name),
+      )
+      .join(" ");
+
+    const haystack = [
+      eventItem.name,
+      eventItem.description ?? "",
+      relatedCollections.map((collectionItem) => collectionItem.name).join(" "),
+      relatedStampNames,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(albumSearch);
+  });
+
   const renderGalleryPickerModal = () => {
     if (!openGalleryTarget) return null;
 
@@ -1961,6 +1990,13 @@ function AdminPageContent() {
             onClick={() => setActiveTab("stamps")}
           >
             Stamps
+          </button>
+          <button
+            type="button"
+            className={`admin-tab ${activeTab === "albums" ? "active" : ""}`}
+            onClick={() => setActiveTab("albums")}
+          >
+            Albumes
           </button>
           <button
             type="button"
@@ -2149,19 +2185,6 @@ function AdminPageContent() {
                           aria-hidden="true"
                         />
                         <span className="admin-item-name">{collectionItem.name}</span>
-                        <span className="admin-date-chip">
-                          {(() => {
-                            const relatedEvents = getCollectionEventIds(collectionItem.id);
-                            if (!relatedEvents.length) return "Sin eventos";
-                            if (relatedEvents.length === 1) {
-                              return (
-                                events.find((eventItem) => eventItem.id === relatedEvents[0])?.name ??
-                                "1 evento"
-                              );
-                            }
-                            return `${relatedEvents.length} eventos`;
-                          })()}
-                        </span>
                       </button>
                       <div className="admin-hover-actions">
                         <button
@@ -2218,28 +2241,7 @@ function AdminPageContent() {
                               getCollectionStampIds(collectionItem.id).includes(stampItem.id),
                             )
                             .map((stampItem) => (
-                              <button
-                                key={stampItem.id}
-                                type="button"
-                                className="admin-stamp-card"
-                                onClick={() => {
-                                  const eventId =
-                                    queryEventIdParam && getCollectionEventIds(collectionItem.id).includes(queryEventIdParam)
-                                      ? queryEventIdParam
-                                      : getCollectionEventIds(collectionItem.id)[0];
-
-                                  if (!eventId) {
-                                    setFeedback("Relaciona esta coleccion con un evento para entregar stamps.");
-                                    return;
-                                  }
-
-                                  openAwardModalWithContext(
-                                    stampItem,
-                                    collectionItem.id,
-                                    eventId,
-                                  );
-                                }}
-                              >
+                              <div key={stampItem.id} className="admin-stamp-card">
                                 {stampItem.image_url ? (
                                   <img
                                     src={stampItem.image_url}
@@ -2250,8 +2252,29 @@ function AdminPageContent() {
                                   <span className="admin-stamp-placeholder">Sin imagen</span>
                                 )}
                                 <span className="admin-item-name">{stampItem.name}</span>
-                              </button>
+                              </div>
                             ))}
+                        </div>
+                        <div className="admin-collection-events">
+                          {getCollectionEventIds(collectionItem.id).length ? (
+                            getCollectionEventIds(collectionItem.id).map((eventId) => {
+                              const relatedEvent = events.find((eventItem) => eventItem.id === eventId);
+                              if (!relatedEvent) return null;
+
+                              return (
+                                <button
+                                  key={eventId}
+                                  type="button"
+                                  className="admin-date-chip admin-date-chip-link"
+                                  onClick={() => router.push(`/admin?tab=events&id=${eventId}`)}
+                                >
+                                  {relatedEvent.name}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <p className="admin-muted admin-muted-small">Sin eventos</p>
+                          )}
                         </div>
                       </div>
                     ) : null}
@@ -2340,6 +2363,111 @@ function AdminPageContent() {
                     </button>
                   </li>
                 ))}
+              </ul>
+            </article>
+          ) : null}
+
+          {activeTab === "albums" ? (
+            <article className="admin-box">
+              <div className="admin-box-header">
+                <input
+                  className="admin-search-input"
+                  type="search"
+                  placeholder="Buscar en albumes"
+                  value={searchTerms.albums}
+                  onChange={(event) =>
+                    setSearchTerms((prev) => ({ ...prev, albums: event.target.value }))
+                  }
+                />
+              </div>
+              <ul className="admin-list">
+                {filteredAlbumEvents.map((eventItem) => {
+                  const albumCollections = collections.filter((collectionItem) =>
+                    getEventCollectionIds(eventItem.id).includes(collectionItem.id),
+                  );
+
+                  return (
+                    <li key={eventItem.id} className="admin-item">
+                      <div className="admin-item-header">
+                        <button
+                          type="button"
+                          className={`admin-select ${expandedEventId === eventItem.id ? "selected" : ""}`}
+                          onClick={() =>
+                            setExpandedEventId((prev) => (prev === eventItem.id ? null : eventItem.id))
+                          }
+                        >
+                          {eventItem.image_url ? (
+                            <img
+                              src={eventItem.image_url}
+                              alt={eventItem.name}
+                              className="admin-inline-thumb"
+                            />
+                          ) : null}
+                          <span className="admin-item-name">{eventItem.name}</span>
+                          <span className="admin-date-chip">
+                            {eventItem.starts_at} - {eventItem.ends_at ?? "Sin fin"}
+                          </span>
+                        </button>
+                      </div>
+                      {expandedEventId === eventItem.id ? (
+                        <div className="admin-expanded">
+                          {albumCollections.length ? (
+                            <div className="admin-album-collections">
+                              {albumCollections.map((collectionItem) => {
+                                const albumStamps = stamps.filter((stampItem) =>
+                                  getCollectionStampIds(collectionItem.id).includes(stampItem.id),
+                                );
+
+                                return (
+                                  <div key={collectionItem.id} className="admin-album-collection">
+                                    <div className="admin-album-collection-header">
+                                      <span className="admin-item-name">{collectionItem.name}</span>
+                                    </div>
+                                    <div className="admin-expanded-stamps">
+                                      {albumStamps.length ? (
+                                        albumStamps.map((stampItem) => (
+                                          <button
+                                            key={`${eventItem.id}-${collectionItem.id}-${stampItem.id}`}
+                                            type="button"
+                                            className="admin-stamp-card"
+                                            onClick={() =>
+                                              openAwardModalWithContext(
+                                                stampItem,
+                                                collectionItem.id,
+                                                eventItem.id,
+                                              )
+                                            }
+                                          >
+                                            {stampItem.image_url ? (
+                                              <img
+                                                src={stampItem.image_url}
+                                                alt={stampItem.name}
+                                                className="admin-stamp-thumb"
+                                              />
+                                            ) : (
+                                              <span className="admin-stamp-placeholder">Sin imagen</span>
+                                            )}
+                                            <span className="admin-item-name">{stampItem.name}</span>
+                                          </button>
+                                        ))
+                                      ) : (
+                                        <p className="admin-muted admin-muted-small">
+                                          Esta coleccion no tiene stamps asignadas.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="admin-muted">Este evento no tiene colecciones asignadas.</p>
+                          )}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </article>
           ) : null}

@@ -1003,6 +1003,40 @@ body {
   margin-top: 4px;
 }
 
+.admin-album-collections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-album-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe7f4;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.admin-album-collection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-collection-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.admin-date-chip-link {
+  border: 0;
+  cursor: pointer;
+}
+
 .admin-inline-list {
   list-style: none;
   margin: 0;
