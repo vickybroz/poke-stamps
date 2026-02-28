@@ -141,8 +141,9 @@ describe("Home login", () => {
         active: false,
       });
       expect(
-        screen.getByText("Solicitud enviada. Un admin debe autorizar tu acceso."),
+        screen.getByText("Tu solicitud fue enviada. Podras acceder cuando un mod acepte tu acceso."),
       ).toBeInTheDocument();
     });
   });
 });
+

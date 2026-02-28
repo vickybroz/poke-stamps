@@ -233,8 +233,8 @@ export default function Home() {
         return;
       }
 
-      setSuccess("Solicitud enviada. Un admin debe autorizar tu acceso.");
-      setMode("signin");
+      setSuccess("Tu solicitud fue enviada. Podras acceder cuando un mod acepte tu acceso.");
+      // Keep the user in a submitted state until they choose to go back to sign in.
       setEmail("");
       setPassword("");
       setTrainerName("");
@@ -248,6 +248,8 @@ export default function Home() {
       setIsLoading(false);
     }
   };
+
+  const showSignupSubmitted = mode === "signup" && Boolean(success);
 
   return (
     <main className="home-screen">
@@ -265,7 +267,7 @@ export default function Home() {
               type="button"
               onClick={() => {
                 setSuccess(null);
-                setMode("signin");
+      // Keep the user in a submitted state until they choose to go back to sign in.
               }}
             >
               Volver a iniciar sesion
@@ -373,10 +375,11 @@ export default function Home() {
           </>
         )}
         {error ? <p className="auth-error">{error}</p> : null}
-        {success ? <p className="auth-success">{success}</p> : null}
+
       </section>
     </main>
   );
 }
+
 
 
