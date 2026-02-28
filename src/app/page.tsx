@@ -1,65 +1,116 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { Press_Start_2P } from "next/font/google";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
+
+const pressStart2P = Press_Start_2P({
+  subsets: ["latin"],
+  weight: "400",
+});
 
 export default function Home() {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSignIn = async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) {
+        setError(authError.message);
+      } else {
+        const userId = authData.user?.id;
+
+        if (!userId) {
+          setError("No se pudo recuperar tu perfil.");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role, active")
+          .eq("id", userId)
+          .single();
+
+        if (profileError || !profile) {
+          setError("No se pudo recuperar tu perfil.");
+          return;
+        }
+
+        if (!profile.active) {
+          setError("Tu cuenta esta desactivada.");
+          return;
+        }
+
+        if (profile.role === "admin" || profile.role === "mod") {
+          router.push("/admin");
+          return;
+        }
+
+        router.push("/user");
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "No se pudo iniciar sesion";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="home-screen">
+      <section className="landing-card" aria-label="Poke Olivos landing">
+        <h1 className={`${pressStart2P.className} logo-title`}>PokeOlivos</h1>
+        <p className="album-subtitle">Stamp album</p>
+
+        <div className="auth-form">
+          <input
+            className="auth-input"
+            type="email"
+            placeholder="Correo"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={isLoading}
+          />
+          <input
+            className="auth-input"
+            type="password"
+            placeholder="Contrasena"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={isLoading}
+          />
+
+          <button
+            className="access-button"
+            type="button"
+            onClick={handleSignIn}
+            disabled={isLoading || !email || !password}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            {isLoading ? "Procesando..." : "Entrar"}
+          </button>
+
+          <Link className="auth-link" href="/reset-password">
+            Olvide mi contrasena
+          </Link>
         </div>
-      </main>
-    </div>
+
+        <p className="auth-note">Si no tienes acceso, contacta a un moderador.</p>
+        {error ? <p className="auth-error">{error}</p> : null}
+      </section>
+    </main>
   );
 }
