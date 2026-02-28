@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 
@@ -9,6 +9,7 @@ type ViewerRole = "admin" | "mod" | "user" | null;
 
 export function AppNavbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [role, setRole] = useState<ViewerRole>(null);
   const normalizedPathname =
     pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
@@ -43,7 +44,13 @@ export function AppNavbar() {
   const showAdminLink = canSeeAdmin && normalizedPathname !== "/admin";
   const showUserLink = canSeeAdmin && normalizedPathname !== "/user";
 
-  if (!showAdminLink && !showUserLink) {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setRole(null);
+    router.push("/");
+  };
+
+  if (!showAdminLink && !showUserLink && !role) {
     return null;
   }
 
@@ -58,6 +65,11 @@ export function AppNavbar() {
         <Link className="app-navbar-link" href="/admin">
           Admin
         </Link>
+      ) : null}
+      {role ? (
+        <button type="button" className="app-navbar-link app-navbar-button" onClick={handleLogout}>
+          Logout
+        </button>
       ) : null}
     </nav>
   );

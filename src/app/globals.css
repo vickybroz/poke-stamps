@@ -245,6 +245,12 @@ body {
   background: #eef4fb;
 }
 
+.app-navbar-button {
+  font: inherit;
+  cursor: pointer;
+  background: #ffffff;
+}
+
 .admin-welcome {
   margin: 16px 0 0;
   color: #345a85;
