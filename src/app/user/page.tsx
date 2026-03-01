@@ -375,41 +375,48 @@ export default function UserPage() {
 
                           {!collapsedCollections.includes(collectionAccordionKey) ? (
                             <div className="user-stamps-grid">
-                              {collectionItem.stamps.map((stampItem) =>
-                                stampItem.owned && stampItem.claimCode && stampItem.awardedAt ? (
-                                  <button
-                                    key={stampItem.id}
-                                    className="user-stamp-slot owned"
-                                    type="button"
-                                    onClick={() => {
-                                      setIsModalVerifiedOpen(false);
-                                      setSelectedStamp({
-                                        name: stampItem.name,
-                                        imageUrl: stampItem.image_url,
-                                        awardedAt: stampItem.awardedAt,
-                                        collectionName: collectionItem.name,
-                                        eventName: eventItem.name,
-                                        claimCode: stampItem.claimCode,
-                                      });
-                                    }}
-                                  >
-                                    {stampItem.image_url ? (
-                                      <img
-                                        src={stampItem.image_url}
-                                        alt={stampItem.name}
-                                        className="user-stamp-thumb"
-                                      />
-                                    ) : (
-                                      <div className="user-stamp-thumb user-stamp-empty" />
-                                    )}
-                                    <span className="user-stamp-label">{stampItem.name}</span>
-                                  </button>
-                                ) : (
+                              {collectionItem.stamps.map((stampItem) => {
+                                const claimCode = stampItem.claimCode;
+                                const awardedAt = stampItem.awardedAt;
+
+                                if (stampItem.owned && claimCode && awardedAt) {
+                                  return (
+                                    <button
+                                      key={stampItem.id}
+                                      className="user-stamp-slot owned"
+                                      type="button"
+                                      onClick={() => {
+                                        setIsModalVerifiedOpen(false);
+                                        setSelectedStamp({
+                                          name: stampItem.name,
+                                          imageUrl: stampItem.image_url,
+                                          awardedAt,
+                                          collectionName: collectionItem.name,
+                                          eventName: eventItem.name,
+                                          claimCode,
+                                        });
+                                      }}
+                                    >
+                                      {stampItem.image_url ? (
+                                        <img
+                                          src={stampItem.image_url}
+                                          alt={stampItem.name}
+                                          className="user-stamp-thumb"
+                                        />
+                                      ) : (
+                                        <div className="user-stamp-thumb user-stamp-empty" />
+                                      )}
+                                      <span className="user-stamp-label">{stampItem.name}</span>
+                                    </button>
+                                  );
+                                }
+
+                                return (
                                   <div key={stampItem.id} className="user-stamp-slot missing">
                                     <div className="user-stamp-placeholder-box" />
                                   </div>
-                                ),
-                              )}
+                                );
+                              })}
                             </div>
                           ) : null}
                         </article>
