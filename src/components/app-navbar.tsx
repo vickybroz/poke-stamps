@@ -29,7 +29,7 @@ export function AppNavbar() {
         .eq("id", userData.user.id)
         .single();
 
-      if (!profile || !profile.active) {
+      if (!profile) {
         setRole(null);
         return;
       }
@@ -43,6 +43,7 @@ export function AppNavbar() {
   const canSeeAdmin = role === "admin" || role === "mod";
   const showAdminLink = canSeeAdmin && normalizedPathname !== "/admin";
   const showUserLink = canSeeAdmin && normalizedPathname !== "/user";
+  const showProfileLink = Boolean(role) && normalizedPathname !== "/profile";
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -50,12 +51,17 @@ export function AppNavbar() {
     router.push("/");
   };
 
-  if (!showAdminLink && !showUserLink && !role) {
+  if (!showAdminLink && !showUserLink && !showProfileLink && !role) {
     return null;
   }
 
   return (
     <nav className="app-navbar" aria-label="Principal">
+      {showProfileLink ? (
+        <Link className="app-navbar-link" href="/profile">
+          Perfil
+        </Link>
+      ) : null}
       {showUserLink ? (
         <Link className="app-navbar-link" href="/user">
           Mi album

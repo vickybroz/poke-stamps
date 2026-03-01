@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { AppNavbar } from "@/components/app-navbar";
@@ -54,7 +54,35 @@ type UserItem = {
   active: boolean;
 };
 
-type AdminTab = "events" | "collections" | "stamps" | "albums" | "gallery" | "users";
+type LogItem = {
+  id: string;
+  awarded_at: string;
+  claim_code: string;
+  event_name: string;
+  collection_name: string;
+  stamp_name: string;
+  delivered_to: string;
+  delivered_by: string;
+};
+
+type LogFilters = {
+  awarded_at: string;
+  stamp_name: string;
+  collection_name: string;
+  event_name: string;
+  delivered_to: string;
+  delivered_by: string;
+  claim_code: string;
+};
+
+type AdminTab =
+  | "events"
+  | "collections"
+  | "stamps"
+  | "albums"
+  | "gallery"
+  | "users"
+  | "logs";
 type UploadTarget = "event" | "collection" | "stamp" | "user";
 type ModalMode = "create" | "edit";
 type DeleteTarget = {
@@ -101,6 +129,8 @@ type BarcodeDetectorConstructor = new (options?: {
 const IMAGE_BUCKET = "poke-stamp-images";
 const MAX_IMAGE_SIZE_BYTES = 300 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const LOGS_PAGE_SIZE = 20;
+const MIN_SEARCH_LENGTH = 3;
 
 function AdminPageContent() {
   const router = useRouter();
@@ -117,6 +147,11 @@ function AdminPageContent() {
   const [eventCollections, setEventCollections] = useState<EventCollectionLink[]>([]);
   const [collectionStamps, setCollectionStamps] = useState<CollectionStampLink[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [logs, setLogs] = useState<LogItem[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsCount, setLogsCount] = useState(0);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsRefreshKey, setLogsRefreshKey] = useState(0);
   const [imageOptions, setImageOptions] = useState<ImageOption[]>([]);
   const [activeTab, setActiveTab] = useState<AdminTab>("events");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -131,6 +166,7 @@ function AdminPageContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [openGalleryTarget, setOpenGalleryTarget] = useState<UploadTarget | null>(null);
   const [isCollectionStampPickerOpen, setIsCollectionStampPickerOpen] = useState(false);
+  const [collectionStampPickerSearch, setCollectionStampPickerSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [awardTarget, setAwardTarget] = useState<AwardTarget>(null);
   const [trainerCodeInput, setTrainerCodeInput] = useState("");
@@ -149,6 +185,16 @@ function AdminPageContent() {
     albums: "",
     gallery: "",
     users: "",
+    logs: "",
+  });
+  const [logFilters, setLogFilters] = useState<LogFilters>({
+    awarded_at: "",
+    stamp_name: "",
+    collection_name: "",
+    event_name: "",
+    delivered_to: "",
+    delivered_by: "",
+    claim_code: "",
   });
   const [eventForm, setEventForm] = useState({
     id: "",
@@ -189,12 +235,29 @@ function AdminPageContent() {
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scannerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const eventSearch = searchTerms.events.trim().toLowerCase();
-  const collectionSearch = searchTerms.collections.trim().toLowerCase();
-  const stampSearch = searchTerms.stamps.trim().toLowerCase();
-  const albumSearch = searchTerms.albums.trim().toLowerCase();
-  const gallerySearch = searchTerms.gallery.trim().toLowerCase();
-  const userSearch = searchTerms.users.trim().toLowerCase();
+  const getActiveSearchTerm = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    return normalized.length >= MIN_SEARCH_LENGTH ? normalized : "";
+  };
+
+  const eventSearch = getActiveSearchTerm(searchTerms.events);
+  const collectionSearch = getActiveSearchTerm(searchTerms.collections);
+  const stampSearch = getActiveSearchTerm(searchTerms.stamps);
+  const albumSearch = getActiveSearchTerm(searchTerms.albums);
+  const gallerySearch = getActiveSearchTerm(searchTerms.gallery);
+  const userSearch = getActiveSearchTerm(searchTerms.users);
+  const appliedLogFilters = useMemo(
+    () => ({
+      awarded_at: logFilters.awarded_at,
+      stamp_name: getActiveSearchTerm(logFilters.stamp_name),
+      collection_name: getActiveSearchTerm(logFilters.collection_name),
+      event_name: getActiveSearchTerm(logFilters.event_name),
+      delivered_to: getActiveSearchTerm(logFilters.delivered_to),
+      delivered_by: getActiveSearchTerm(logFilters.delivered_by),
+      claim_code: getActiveSearchTerm(logFilters.claim_code),
+    }),
+    [logFilters],
+  );
   const queryTabParam = searchParams.get("tab");
   const queryIdParam = searchParams.get("id");
   const queryEventIdParam = searchParams.get("eventId");
@@ -204,7 +267,8 @@ function AdminPageContent() {
     queryTabParam === "stamps" ||
     queryTabParam === "albums" ||
     queryTabParam === "gallery" ||
-    queryTabParam === "users"
+    queryTabParam === "users" ||
+    queryTabParam === "logs"
       ? queryTabParam
       : null;
 
@@ -316,6 +380,171 @@ function AdminPageContent() {
     setUsers((data as UserItem[] | null) ?? []);
   };
 
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true);
+
+    const resolveNameFilterIds = async (
+      table: "events" | "collections" | "stamps" | "profiles",
+      value: string,
+    ) => {
+      const term = value.trim();
+
+      if (term.length < MIN_SEARCH_LENGTH) {
+        return null;
+      }
+
+      const column = table === "profiles" ? "trainer_name" : "name";
+      const { data, error } = await supabase
+        .from(table)
+        .select("id")
+        .ilike(column, `%${term}%`)
+        .limit(200);
+
+      if (error) {
+        throw error;
+      }
+
+      return ((data as Array<{ id: string }> | null) ?? []).map((item) => item.id);
+    };
+
+    try {
+      const [
+        eventIds,
+        collectionIds,
+        stampIds,
+        deliveredToIds,
+        deliveredByIds,
+      ] = await Promise.all([
+        resolveNameFilterIds("events", appliedLogFilters.event_name),
+        resolveNameFilterIds("collections", appliedLogFilters.collection_name),
+        resolveNameFilterIds("stamps", appliedLogFilters.stamp_name),
+        resolveNameFilterIds("profiles", appliedLogFilters.delivered_to),
+        resolveNameFilterIds("profiles", appliedLogFilters.delivered_by),
+      ]);
+
+      if (
+        (eventIds && !eventIds.length) ||
+        (collectionIds && !collectionIds.length) ||
+        (stampIds && !stampIds.length) ||
+        (deliveredToIds && !deliveredToIds.length) ||
+        (deliveredByIds && !deliveredByIds.length)
+      ) {
+        setLogs([]);
+        setLogsCount(0);
+        return;
+      }
+
+      let query = supabase
+        .from("user_stamps")
+        .select(
+          "id, awarded_at, claim_code, user_id, awarded_by, event:events(name), collection:collections(name), stamp:stamps(name)",
+          { count: "exact" },
+        )
+        .order("awarded_at", { ascending: false });
+
+      const claimCodeTerm = appliedLogFilters.claim_code.trim();
+
+      if (claimCodeTerm.length >= MIN_SEARCH_LENGTH) {
+        query = query.ilike("claim_code", `%${claimCodeTerm}%`);
+      }
+
+      if (appliedLogFilters.awarded_at) {
+        const dayStart = `${appliedLogFilters.awarded_at}T00:00:00`;
+        const nextDay = new Date(`${appliedLogFilters.awarded_at}T00:00:00`);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const nextDayIso = nextDay.toISOString().slice(0, 19);
+
+        query = query.gte("awarded_at", dayStart).lt("awarded_at", nextDayIso);
+      }
+
+      if (eventIds) {
+        query = query.in("event_id", eventIds);
+      }
+      if (collectionIds) {
+        query = query.in("collection_id", collectionIds);
+      }
+      if (stampIds) {
+        query = query.in("stamp_id", stampIds);
+      }
+      if (deliveredToIds) {
+        query = query.in("user_id", deliveredToIds);
+      }
+      if (deliveredByIds) {
+        query = query.in("awarded_by", deliveredByIds);
+      }
+
+      const from = (logsPage - 1) * LOGS_PAGE_SIZE;
+      const to = from + LOGS_PAGE_SIZE - 1;
+      const { data, error, count } = await query.range(from, to);
+
+      if (error) {
+        throw error;
+      }
+
+      const rows =
+        ((data as Array<{
+          id: string;
+          awarded_at: string;
+          claim_code: string;
+          user_id: string;
+          awarded_by: string | null;
+          event: { name: string } | Array<{ name: string }> | null;
+          collection: { name: string } | Array<{ name: string }> | null;
+          stamp: { name: string } | Array<{ name: string }> | null;
+        }> | null) ?? []);
+
+      const profileIds = Array.from(
+        new Set(
+          rows.flatMap((row) => [row.user_id, row.awarded_by].filter(Boolean) as string[]),
+        ),
+      );
+
+      const { data: profileRows, error: profileError } = profileIds.length
+        ? await supabase
+            .from("profiles")
+            .select("id, trainer_name")
+            .in("id", profileIds)
+        : { data: [], error: null };
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const profileMap = new Map(
+        (((profileRows as Array<{ id: string; trainer_name: string }> | null) ?? [])).map(
+          (item) => [item.id, item.trainer_name],
+        ),
+      );
+
+      const getRelationName = (
+        relation: { name: string } | Array<{ name: string }> | null,
+      ) => {
+        if (!relation) return "-";
+        return Array.isArray(relation) ? relation[0]?.name ?? "-" : relation.name;
+      };
+
+      setLogs(
+        rows.map((row) => ({
+          id: row.id,
+          awarded_at: row.awarded_at,
+          claim_code: row.claim_code,
+          event_name: getRelationName(row.event),
+          collection_name: getRelationName(row.collection),
+          stamp_name: getRelationName(row.stamp),
+          delivered_to: profileMap.get(row.user_id) ?? "-",
+          delivered_by: row.awarded_by ? profileMap.get(row.awarded_by) ?? "-" : "-",
+        })),
+      );
+      setLogsCount(count ?? 0);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "No se pudieron cargar los logs.");
+      setLogs([]);
+      setLogsCount(0);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [appliedLogFilters, logsPage]);
+
   const reloadAll = useCallback(async () => {
     await Promise.all([
       loadEvents(),
@@ -378,41 +607,6 @@ function AdminPageContent() {
     resetModalState();
   };
 
-  const openAwardModal = (stampItem: StampItem) => {
-    const collectionId = selectedCollectionId;
-    const eventId =
-      queryEventIdParam && collectionId
-        ? queryEventIdParam
-        : collectionId
-          ? eventCollections.find((item) => item.collection_id === collectionId)?.event_id ?? null
-          : null;
-    const collection = collections.find((item) => item.id === collectionId);
-    const event = events.find((item) => item.id === eventId);
-
-    if (!collection || !event) {
-      setFeedback("Selecciona una coleccion dentro de un evento para entregar la stamp.");
-      return;
-    }
-
-    setTrainerCodeInput("");
-    setTrainerLookup({
-      loading: false,
-      name: null,
-      userId: null,
-      error: null,
-    });
-    setIsScannerOpen(false);
-    setScannerError(null);
-    setAwardTarget({
-      stampId: stampItem.id,
-      stampName: stampItem.name,
-      stampImageUrl: stampItem.image_url,
-      collectionId: collection.id,
-      collectionName: collection.name,
-      eventId: event.id,
-      eventName: event.name,
-    });
-  };
 
   const openAwardModalWithContext = (
     stampItem: StampItem,
@@ -534,12 +728,7 @@ function AdminPageContent() {
       const { data: userData, error: userError } = await supabase.auth.getUser();
 
       if (userError || !userData.user) {
-        setState({
-          trainerName: null,
-          error: "Necesitas iniciar sesion para acceder a esta pagina.",
-          loading: false,
-          userId: null,
-        });
+        router.push("/");
         return;
       }
 
@@ -570,12 +759,7 @@ function AdminPageContent() {
       }
 
       if (profile.role !== "admin" && profile.role !== "mod") {
-        setState({
-          trainerName: null,
-          error: "No tienes permisos de staff.",
-          loading: false,
-          userId: null,
-        });
+        router.push("/user");
         return;
       }
 
@@ -590,7 +774,7 @@ function AdminPageContent() {
     };
 
     void loadAdminProfile();
-  }, [reloadAll]);
+  }, [reloadAll, router]);
 
   const stopScanner = useCallback(() => {
     if (scannerIntervalRef.current) {
@@ -1147,6 +1331,7 @@ function AdminPageContent() {
       }
 
       await reloadAll();
+      setLogsRefreshKey((current) => current + 1);
       setFeedback("Item eliminado.");
       setDeleteTarget(null);
     } catch (error) {
@@ -1193,25 +1378,32 @@ function AdminPageContent() {
     setIsSaving(true);
     setFeedback(null);
 
-    try {
-      const { error } = await supabase.from("user_stamps").insert({
-        user_id: trainerLookup.userId,
-        stamp_id: awardTarget.stampId,
-        collection_id: awardTarget.collectionId,
-        event_id: awardTarget.eventId,
-        awarded_by: state.userId,
-      });
+      try {
+        const { data, error } = await supabase
+          .from("user_stamps")
+          .insert({
+            user_id: trainerLookup.userId,
+            stamp_id: awardTarget.stampId,
+            collection_id: awardTarget.collectionId,
+            event_id: awardTarget.eventId,
+            awarded_by: state.userId,
+          })
+          .select("claim_code")
+          .single();
 
-      if (error) {
-        if ("code" in error && error.code === "23505") {
-          setFeedback(`${trainerLookup.name} ya tiene esta stamp.`);
-          return;
+        if (error) {
+          if ("code" in error && error.code === "23505") {
+            setFeedback(`${trainerLookup.name} ya tiene esta stamp.`);
+            return;
         }
         throw error;
       }
 
-      setFeedback(`Stamp entregada a ${trainerLookup.name}.`);
-      closeAwardModal();
+        setLogsRefreshKey((current) => current + 1);
+        setFeedback(
+          `Stamp entregada a ${trainerLookup.name}. Codigo: ${data?.claim_code ?? "sin codigo"}.`,
+        );
+        closeAwardModal();
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "No se pudo entregar la stamp.");
     } finally {
@@ -1241,6 +1433,14 @@ function AdminPageContent() {
       return;
     }
   }, [queryEventIdParam, queryIdParam, queryTab]);
+
+  useEffect(() => {
+    if (activeTab !== "logs") {
+      return;
+    }
+
+    void loadLogs();
+  }, [activeTab, loadLogs, logsRefreshKey]);
 
   const renderCreateModal = () => {
     if (!createModalTab) return null;
@@ -1691,6 +1891,16 @@ function AdminPageContent() {
       return null;
     }
 
+    const stampSearch = getActiveSearchTerm(collectionStampPickerSearch);
+    const filteredStampOptions = stamps.filter((stampItem) => {
+      if (!stampSearch) return true;
+
+      return [stampItem.name, stampItem.description ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(stampSearch);
+    });
+
     return (
       <div
         className="admin-modal-backdrop"
@@ -1717,35 +1927,47 @@ function AdminPageContent() {
             </button>
           </div>
 
+          <input
+            type="search"
+            className="admin-search-input admin-picker-search"
+            placeholder="Buscar stamps"
+            value={collectionStampPickerSearch}
+            onChange={(event) => setCollectionStampPickerSearch(event.target.value)}
+          />
+
           <div className="admin-stamp-select-grid">
-            {stamps.map((stampItem) => (
-              <label key={stampItem.id} className="admin-stamp-select-card">
-                <input
-                  type="checkbox"
-                  checked={collectionForm.stamp_ids.includes(stampItem.id)}
-                  onChange={(event) =>
-                    setCollectionForm((prev) => ({
-                      ...prev,
-                      stamp_ids: event.target.checked
-                        ? [...prev.stamp_ids, stampItem.id]
-                        : prev.stamp_ids.filter((id) => id !== stampItem.id),
-                    }))
-                  }
-                />
-                {stampItem.image_url ? (
-                  <img
-                    src={stampItem.image_url}
-                    alt={stampItem.name}
-                    className="admin-stamp-select-thumb"
+            {filteredStampOptions.length ? (
+              filteredStampOptions.map((stampItem) => (
+                <label key={stampItem.id} className="admin-stamp-select-card">
+                  <input
+                    type="checkbox"
+                    checked={collectionForm.stamp_ids.includes(stampItem.id)}
+                    onChange={(event) =>
+                      setCollectionForm((prev) => ({
+                        ...prev,
+                        stamp_ids: event.target.checked
+                          ? [...prev.stamp_ids, stampItem.id]
+                          : prev.stamp_ids.filter((id) => id !== stampItem.id),
+                      }))
+                    }
                   />
-                ) : (
-                  <span className="admin-stamp-placeholder admin-stamp-select-thumb">
-                    Sin imagen
-                  </span>
-                )}
-                <span className="admin-stamp-select-name">{stampItem.name}</span>
-              </label>
-            ))}
+                  {stampItem.image_url ? (
+                    <img
+                      src={stampItem.image_url}
+                      alt={stampItem.name}
+                      className="admin-stamp-select-thumb"
+                    />
+                  ) : (
+                    <span className="admin-stamp-placeholder admin-stamp-select-thumb">
+                      Sin imagen
+                    </span>
+                  )}
+                  <span className="admin-stamp-select-name">{stampItem.name}</span>
+                </label>
+              ))
+            ) : (
+              <p className="admin-muted">No hay stamps que coincidan con la busqueda.</p>
+            )}
           </div>
         </div>
       </div>
@@ -1857,6 +2079,41 @@ function AdminPageContent() {
       .toLowerCase();
     return haystack.includes(userSearch);
   });
+
+  const handleTabChange = (tab: AdminTab) => {
+    setActiveTab(tab);
+
+    if (tab !== "events") {
+      setSelectedEventId(null);
+    }
+
+    if (tab !== "collections") {
+      setSelectedCollectionId(null);
+    }
+
+    if (tab !== "events" && tab !== "albums") {
+      setExpandedEventId(null);
+    }
+
+    if (tab !== "collections") {
+      setExpandedCollectionId(null);
+    }
+  };
+
+  const formatLogDate = (value: string) => {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return new Intl.DateTimeFormat("es-AR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(date);
+  };
+
+  const totalLogPages = Math.max(1, Math.ceil(logsCount / LOGS_PAGE_SIZE));
 
   const filteredAlbumEvents = events.filter((eventItem) => {
     if (!albumSearch) return true;
@@ -1973,44 +2230,51 @@ function AdminPageContent() {
           <button
             type="button"
             className={`admin-tab ${activeTab === "events" ? "active" : ""}`}
-            onClick={() => setActiveTab("events")}
+            onClick={() => handleTabChange("events")}
           >
             Eventos
           </button>
           <button
             type="button"
             className={`admin-tab ${activeTab === "collections" ? "active" : ""}`}
-            onClick={() => setActiveTab("collections")}
+            onClick={() => handleTabChange("collections")}
           >
             Colecciones
           </button>
           <button
             type="button"
             className={`admin-tab ${activeTab === "stamps" ? "active" : ""}`}
-            onClick={() => setActiveTab("stamps")}
+            onClick={() => handleTabChange("stamps")}
           >
             Stamps
           </button>
           <button
             type="button"
             className={`admin-tab ${activeTab === "albums" ? "active" : ""}`}
-            onClick={() => setActiveTab("albums")}
+            onClick={() => handleTabChange("albums")}
           >
             Albumes
           </button>
           <button
             type="button"
             className={`admin-tab ${activeTab === "gallery" ? "active" : ""}`}
-            onClick={() => setActiveTab("gallery")}
+            onClick={() => handleTabChange("gallery")}
           >
             Galeria
           </button>
           <button
             type="button"
             className={`admin-tab ${activeTab === "users" ? "active" : ""}`}
-            onClick={() => setActiveTab("users")}
+            onClick={() => handleTabChange("users")}
           >
             Usuarios
+          </button>
+          <button
+            type="button"
+            className={`admin-tab ${activeTab === "logs" ? "active" : ""}`}
+            onClick={() => handleTabChange("logs")}
+          >
+            Logs
           </button>
         </div>
 
@@ -2348,7 +2612,7 @@ function AdminPageContent() {
                     <button
                       type="button"
                       className="admin-stamp-card"
-                      onClick={() => openAwardModal(stampItem)}
+                      onClick={() => openEditModal("stamp", stampItem.id)}
                     >
                       {stampItem.image_url ? (
                         <img
@@ -2627,6 +2891,143 @@ function AdminPageContent() {
               )}
             </article>
           ) : null}
+
+          {activeTab === "logs" ? (
+            <article className="admin-box">
+              <div className="admin-box-header">
+                <div className="admin-log-filters">
+                  <input
+                    className="admin-search-input"
+                    type="date"
+                    value={logFilters.awarded_at}
+                    onChange={(event) => {
+                      setLogsPage(1);
+                      setLogFilters((prev) => ({ ...prev, awarded_at: event.target.value }));
+                    }}
+                  />
+                  <input
+                    className="admin-search-input"
+                    type="search"
+                    placeholder="Stamp"
+                    value={logFilters.stamp_name}
+                    onChange={(event) => {
+                      setLogsPage(1);
+                      setLogFilters((prev) => ({ ...prev, stamp_name: event.target.value }));
+                    }}
+                  />
+                  <input
+                    className="admin-search-input"
+                    type="search"
+                    placeholder="Coleccion"
+                    value={logFilters.collection_name}
+                    onChange={(event) => {
+                      setLogsPage(1);
+                      setLogFilters((prev) => ({ ...prev, collection_name: event.target.value }));
+                    }}
+                  />
+                  <input
+                    className="admin-search-input"
+                    type="search"
+                    placeholder="Evento"
+                    value={logFilters.event_name}
+                    onChange={(event) => {
+                      setLogsPage(1);
+                      setLogFilters((prev) => ({ ...prev, event_name: event.target.value }));
+                    }}
+                  />
+                  <input
+                    className="admin-search-input"
+                    type="search"
+                    placeholder="Entregada a"
+                    value={logFilters.delivered_to}
+                    onChange={(event) => {
+                      setLogsPage(1);
+                      setLogFilters((prev) => ({ ...prev, delivered_to: event.target.value }));
+                    }}
+                  />
+                  <input
+                    className="admin-search-input"
+                    type="search"
+                    placeholder="Entregada por"
+                    value={logFilters.delivered_by}
+                    onChange={(event) => {
+                      setLogsPage(1);
+                      setLogFilters((prev) => ({ ...prev, delivered_by: event.target.value }));
+                    }}
+                  />
+                  <input
+                    className="admin-search-input"
+                    type="search"
+                    placeholder="Claim code"
+                    value={logFilters.claim_code}
+                    onChange={(event) => {
+                      setLogsPage(1);
+                      setLogFilters((prev) => ({ ...prev, claim_code: event.target.value }));
+                    }}
+                  />
+                </div>
+              </div>
+              {logsLoading ? (
+                <p className="admin-muted">Cargando logs...</p>
+              ) : logs.length ? (
+                <>
+                  <div className="admin-users-table-wrap">
+                    <table className="admin-users-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha de entrega</th>
+                          <th>Stamp</th>
+                          <th>De la coleccion</th>
+                          <th>En el evento</th>
+                          <th>Entregada a</th>
+                          <th>Entregada por</th>
+                          <th>Claim code</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {logs.map((logItem) => (
+                          <tr key={logItem.id}>
+                            <td>{formatLogDate(logItem.awarded_at)}</td>
+                            <td>{logItem.stamp_name}</td>
+                            <td>{logItem.collection_name}</td>
+                            <td>{logItem.event_name}</td>
+                            <td>{logItem.delivered_to}</td>
+                            <td>{logItem.delivered_by}</td>
+                            <td>{logItem.claim_code}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="admin-log-pagination">
+                    <button
+                      type="button"
+                      className="admin-mini-btn"
+                      onClick={() => setLogsPage((current) => Math.max(1, current - 1))}
+                      disabled={logsPage === 1}
+                    >
+                      Anterior
+                    </button>
+                    <span className="admin-muted admin-muted-small">
+                      Pagina {logsPage} de {totalLogPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="admin-mini-btn"
+                      onClick={() =>
+                        setLogsPage((current) => Math.min(totalLogPages, current + 1))
+                      }
+                      disabled={logsPage >= totalLogPages}
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="admin-muted">No hay logs para mostrar.</p>
+              )}
+            </article>
+          ) : null}
         </div>
         {renderCreateModal()}
         {renderDeleteModal()}
@@ -2653,4 +3054,10 @@ export default function AdminPage() {
     </Suspense>
   );
 }
+
+
+
+
+
+
 

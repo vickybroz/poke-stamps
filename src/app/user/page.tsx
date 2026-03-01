@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import QRCode from "qrcode";
 import { supabase } from "@/lib/supabase/client";
 import { AppNavbar } from "@/components/app-navbar";
 
@@ -17,6 +18,7 @@ type UserStampRow = {
   collection_id: string;
   stamp_id: string;
   awarded_at: string;
+  claim_code: string;
 };
 
 type EventItem = {
@@ -51,6 +53,7 @@ type SelectedUserStamp = {
   awardedAt: string;
   collectionName: string;
   eventName: string;
+  claimCode: string;
 };
 
 export default function UserPage() {
@@ -69,18 +72,15 @@ export default function UserPage() {
   const [selectedStamp, setSelectedStamp] = useState<SelectedUserStamp | null>(null);
   const [collapsedEvents, setCollapsedEvents] = useState<string[]>([]);
   const [collapsedCollections, setCollapsedCollections] = useState<string[]>([]);
+  const [qrCodeMap, setQrCodeMap] = useState<Record<string, string>>({});
+  const [isModalVerifiedOpen, setIsModalVerifiedOpen] = useState(false);
 
   useEffect(() => {
     const loadUserProfile = async () => {
       const { data: userData, error: userError } = await supabase.auth.getUser();
 
       if (userError || !userData.user) {
-        setState({
-          trainerName: null,
-          error: "Necesitas iniciar sesion para acceder a esta pagina.",
-          loading: false,
-          userId: null,
-        });
+        router.push("/");
         return;
       }
 
@@ -112,7 +112,7 @@ export default function UserPage() {
 
       const { data: userStampData, error: userStampError } = await supabase
         .from("user_stamps")
-        .select("event_id, collection_id, stamp_id, awarded_at")
+        .select("event_id, collection_id, stamp_id, awarded_at, claim_code")
         .eq("user_id", userData.user.id)
         .order("awarded_at", { ascending: false });
 
@@ -138,10 +138,7 @@ export default function UserPage() {
               .in("id", eventIds)
           : Promise.resolve({ data: [] }),
         collectionIds.length
-          ? supabase
-              .from("collections")
-              .select("id, name, image_url")
-              .in("id", collectionIds)
+          ? supabase.from("collections").select("id, name, image_url").in("id", collectionIds)
           : Promise.resolve({ data: [] }),
         collectionIds.length
           ? supabase
@@ -173,7 +170,45 @@ export default function UserPage() {
     };
 
     void loadUserProfile();
-  }, []);
+  }, [router]);
+
+  useEffect(() => {
+    const claimCodes = Array.from(new Set(userStamps.map((row) => row.claim_code).filter(Boolean)));
+
+    if (!claimCodes.length) {
+      setQrCodeMap({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadQRCodes = async () => {
+      const entries = await Promise.all(
+        claimCodes.map(async (claimCode) => {
+          const qrUrl = await QRCode.toDataURL(claimCode, {
+            margin: 1,
+            width: 220,
+            color: {
+              dark: "#1d3c78",
+              light: "#ffffff",
+            },
+          });
+
+          return [claimCode, qrUrl] as const;
+        }),
+      );
+
+      if (!cancelled) {
+        setQrCodeMap(Object.fromEntries(entries));
+      }
+    };
+
+    void loadQRCodes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userStamps]);
 
   const eventGroups = useMemo(() => {
     return events
@@ -195,15 +230,21 @@ export default function UserPage() {
                     collectionStamp.stamp_id === stampItem.id,
                 ),
               )
-              .map((stampItem) => ({
-                ...stampItem,
-                owned: userStamps.some(
+              .map((stampItem) => {
+                const awardedStamp = userStamps.find(
                   (userStamp) =>
                     userStamp.event_id === eventItem.id &&
                     userStamp.collection_id === collectionItem.id &&
                     userStamp.stamp_id === stampItem.id,
-                ),
-              }));
+                );
+
+                return {
+                  ...stampItem,
+                  owned: Boolean(awardedStamp),
+                  claimCode: awardedStamp?.claim_code ?? null,
+                  awardedAt: awardedStamp?.awarded_at ?? null,
+                };
+              });
 
             return {
               ...collectionItem,
@@ -241,11 +282,11 @@ export default function UserPage() {
     );
   };
 
-  const toggleCollection = (collectionId: string) => {
+  const toggleCollection = (collectionKey: string) => {
     setCollapsedCollections((current) =>
-      current.includes(collectionId)
-        ? current.filter((item) => item !== collectionId)
-        : [...current, collectionId],
+      current.includes(collectionKey)
+        ? current.filter((item) => item !== collectionKey)
+        : [...current, collectionKey],
     );
   };
 
@@ -301,84 +342,79 @@ export default function UserPage() {
                     {eventItem.description ? (
                       <p className="user-event-subtitle">{eventItem.description}</p>
                     ) : null}
+                    <p className="user-event-date-chip user-event-date-chip-mobile">
+                      {eventItem.starts_at} - {eventItem.ends_at ?? "Sin fin"}
+                    </p>
                   </div>
                   <p className="user-event-date-chip user-event-date-chip-desktop">
-                    {eventItem.starts_at} - {eventItem.ends_at ?? "Sin fin"}
-                  </p>
-                  <p className="user-event-date-chip user-event-date-chip-mobile">
                     {eventItem.starts_at} - {eventItem.ends_at ?? "Sin fin"}
                   </p>
                 </button>
 
                 {!collapsedEvents.includes(eventItem.id) ? (
                   <div className="user-collections">
-                    {eventItem.collections.map((collectionItem) => (
-                      <article key={collectionItem.id} className="user-collection-card">
-                        <button
-                          className="user-collection-header"
-                          type="button"
-                          onClick={() => toggleCollection(collectionItem.id)}
-                        >
-                          <h3 className="user-collection-title">{collectionItem.name}</h3>
-                          {collectionItem.image_url ? (
-                            <img
-                              src={collectionItem.image_url}
-                              alt={collectionItem.name}
-                              className="user-collection-thumb"
-                            />
+                    {eventItem.collections.map((collectionItem) => {
+                      const collectionAccordionKey = `${eventItem.id}:${collectionItem.id}`;
+
+                      return (
+                        <article key={collectionAccordionKey} className="user-collection-card">
+                          <button
+                            className="user-collection-header"
+                            type="button"
+                            onClick={() => toggleCollection(collectionAccordionKey)}
+                          >
+                            <h3 className="user-collection-title">{collectionItem.name}</h3>
+                            {collectionItem.image_url ? (
+                              <img
+                                src={collectionItem.image_url}
+                                alt={collectionItem.name}
+                                className="user-collection-thumb"
+                              />
+                            ) : null}
+                          </button>
+
+                          {!collapsedCollections.includes(collectionAccordionKey) ? (
+                            <div className="user-stamps-grid">
+                              {collectionItem.stamps.map((stampItem) =>
+                                stampItem.owned && stampItem.claimCode && stampItem.awardedAt ? (
+                                  <button
+                                    key={stampItem.id}
+                                    className="user-stamp-slot owned"
+                                    type="button"
+                                    onClick={() => {
+                                      setIsModalVerifiedOpen(false);
+                                      setSelectedStamp({
+                                        name: stampItem.name,
+                                        imageUrl: stampItem.image_url,
+                                        awardedAt: stampItem.awardedAt,
+                                        collectionName: collectionItem.name,
+                                        eventName: eventItem.name,
+                                        claimCode: stampItem.claimCode,
+                                      });
+                                    }}
+                                  >
+                                    {stampItem.image_url ? (
+                                      <img
+                                        src={stampItem.image_url}
+                                        alt={stampItem.name}
+                                        className="user-stamp-thumb"
+                                      />
+                                    ) : (
+                                      <div className="user-stamp-thumb user-stamp-empty" />
+                                    )}
+                                    <span className="user-stamp-label">{stampItem.name}</span>
+                                  </button>
+                                ) : (
+                                  <div key={stampItem.id} className="user-stamp-slot missing">
+                                    <div className="user-stamp-placeholder-box" />
+                                  </div>
+                                ),
+                              )}
+                            </div>
                           ) : null}
-                        </button>
-
-                        {!collapsedCollections.includes(collectionItem.id) ? (
-                          <div className="user-stamps-grid">
-                            {collectionItem.stamps.map((stampItem) =>
-                              stampItem.owned ? (
-                                <button
-                                  key={stampItem.id}
-                                  className="user-stamp-slot owned"
-                                  type="button"
-                                  onClick={() => {
-                                const awardedStamp = userStamps.find(
-                                  (userStamp) =>
-                                    userStamp.event_id === eventItem.id &&
-                                    userStamp.collection_id === collectionItem.id &&
-                                    userStamp.stamp_id === stampItem.id,
-                                );
-
-                                    if (!awardedStamp) {
-                                      return;
-                                    }
-
-                                    setSelectedStamp({
-                                      name: stampItem.name,
-                                      imageUrl: stampItem.image_url,
-                                      awardedAt: awardedStamp.awarded_at,
-                                      collectionName: collectionItem.name,
-                                      eventName: eventItem.name,
-                                    });
-                                  }}
-                                >
-                                  {stampItem.image_url ? (
-                                    <img
-                                      src={stampItem.image_url}
-                                      alt={stampItem.name}
-                                      className="user-stamp-thumb"
-                                    />
-                                  ) : (
-                                    <div className="user-stamp-thumb user-stamp-empty" />
-                                  )}
-                                  <span className="user-stamp-label">{stampItem.name}</span>
-                                </button>
-                              ) : (
-                                <div key={stampItem.id} className="user-stamp-slot missing">
-                                  <div className="user-stamp-placeholder-box" />
-                                </div>
-                              ),
-                            )}
-                          </div>
-                        ) : null}
-                      </article>
-                    ))}
+                        </article>
+                      );
+                    })}
                   </div>
                 ) : null}
               </section>
@@ -392,7 +428,10 @@ export default function UserPage() {
           <div
             className="admin-modal-backdrop"
             role="presentation"
-            onClick={() => setSelectedStamp(null)}
+            onClick={() => {
+              setSelectedStamp(null);
+              setIsModalVerifiedOpen(false);
+            }}
           >
             <div
               className="admin-modal user-stamp-modal"
@@ -409,7 +448,10 @@ export default function UserPage() {
                   className="admin-icon-close"
                   type="button"
                   aria-label="Cerrar"
-                  onClick={() => setSelectedStamp(null)}
+                  onClick={() => {
+                    setSelectedStamp(null);
+                    setIsModalVerifiedOpen(false);
+                  }}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true" className="admin-icon-svg">
                     <path
@@ -420,15 +462,57 @@ export default function UserPage() {
                 </button>
               </div>
 
-              {selectedStamp.imageUrl ? (
-                <img
-                  src={selectedStamp.imageUrl}
-                  alt={selectedStamp.name}
-                  className="user-stamp-modal-image"
-                />
-              ) : (
-                <div className="user-stamp-modal-image user-stamp-empty" />
-              )}
+              <div className={`user-stamp-modal-flip ${isModalVerifiedOpen ? "flipped" : ""}`}>
+                <div className="user-stamp-modal-face user-stamp-modal-front">
+                  {selectedStamp.imageUrl ? (
+                    <img
+                      src={selectedStamp.imageUrl}
+                      alt={selectedStamp.name}
+                      className="user-stamp-modal-image"
+                    />
+                  ) : (
+                    <div className="user-stamp-modal-image user-stamp-empty" />
+                  )}
+                  <button
+                    type="button"
+                    className="user-stamp-modal-verified"
+                    onClick={() => setIsModalVerifiedOpen(true)}
+                    aria-label="Verificar stamp"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M12 1.1 14.1 3l2.8-.3 1 2.6 2.7.9-.3 2.8 1.9 2.1-1.9 2.1.3 2.8-2.7.9-1 2.6-2.8-.3L12 22.9 9.9 21l-2.8.3-1-2.6-2.7-.9.3-2.8L1.8 13l1.9-2.1-.3-2.8 2.7-.9 1-2.6 2.8.3z"
+                      />
+                      <path
+                        fill="#ffffff"
+                        d="M10.25 16.35 6.9 13l1.55-1.55 1.8 1.8 5.3-5.3 1.55 1.55z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="user-stamp-modal-face user-stamp-modal-back"
+                  onClick={() => setIsModalVerifiedOpen(false)}
+                  aria-label="Volver a la stamp"
+                >
+                  {qrCodeMap[selectedStamp.claimCode] ? (
+                    <>
+                      <img
+                        src={qrCodeMap[selectedStamp.claimCode]}
+                        alt={`QR ${selectedStamp.claimCode}`}
+                        className="user-stamp-qr"
+                      />
+                      <p className="user-stamp-claim-code">
+                        CAD <strong>{selectedStamp.claimCode}</strong>
+                      </p>
+                    </>
+                  ) : (
+                    <div className="user-stamp-modal-image user-stamp-empty" />
+                  )}
+                </button>
+              </div>
 
               <p className="user-stamp-modal-copy">
                 Conseguida el {formatAwardedAt(selectedStamp.awardedAt)}, en la coleccion{" "}
@@ -442,3 +526,8 @@ export default function UserPage() {
     </main>
   );
 }
+
+
+
+
+

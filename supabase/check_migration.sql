@@ -46,3 +46,4 @@ join public.events e on e.id = us.event_id
 join public.collections c on c.id = us.collection_id
 join public.stamps s on s.id = us.stamp_id
 order by us.awarded_at desc;
+
