@@ -5,6 +5,7 @@ import { Press_Start_2P } from "next/font/google";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { clearAuthSnapshot, writeAuthSnapshot } from "@/lib/auth-snapshot";
 
 const pressStart2P = Press_Start_2P({
   subsets: ["latin"],
@@ -167,19 +168,32 @@ export default function Home() {
 
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("role, active")
+          .select("trainer_name, trainer_code, role, active")
           .eq("id", userId)
           .single();
 
         if (profileError || !profile) {
+          await supabase.auth.signOut();
+          clearAuthSnapshot();
           setError("No se pudo recuperar tu perfil.");
           return;
         }
 
         if (!profile.active) {
+          await supabase.auth.signOut();
+          clearAuthSnapshot();
           setError("Pendiente: usuario no habilitado todavia.");
           return;
         }
+
+        writeAuthSnapshot({
+          userId,
+          trainerName: profile.trainer_name,
+          trainerCode: profile.trainer_code,
+          role: profile.role,
+          active: profile.active,
+          savedAt: Date.now(),
+        });
 
         if (profile.role === "admin" || profile.role === "mod") {
           router.push("/admin");
@@ -216,6 +230,7 @@ export default function Home() {
       const userId = authData.user?.id;
 
       if (!userId) {
+        clearAuthSnapshot();
         setError("No se pudo crear la cuenta.");
         return;
       }
@@ -229,10 +244,14 @@ export default function Home() {
       });
 
       if (profileError) {
+        await supabase.auth.signOut();
+        clearAuthSnapshot();
         setError(profileError.message);
         return;
       }
 
+      await supabase.auth.signOut();
+      clearAuthSnapshot();
       setSuccess("Tu solicitud fue enviada. Podras acceder cuando un mod acepte tu acceso.");
       // Keep the user in a submitted state until they choose to go back to sign in.
       setEmail("");

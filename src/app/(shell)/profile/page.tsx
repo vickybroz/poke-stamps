@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useNavigationPending } from "@/components/navigation-pending";
 import { supabase } from "@/lib/supabase/client";
-import { AppNavbar } from "@/components/app-navbar";
+import { clearAuthAndRedirect, readAuthSnapshot, writeAuthSnapshot } from "@/lib/auth-snapshot";
 
 type ProfileState = {
   loading: boolean;
@@ -19,6 +20,7 @@ type ProfileForm = {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { stopNavigation } = useNavigationPending();
   const [state, setState] = useState<ProfileState>({
     loading: true,
     error: null,
@@ -33,27 +35,48 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const loadProfile = async () => {
+      const snapshot = readAuthSnapshot();
+
+      if (!snapshot || !snapshot.active) {
+        router.replace("/");
+        return;
+      }
+
       const { data: userData, error: userError } = await supabase.auth.getUser();
 
       if (userError || !userData.user) {
-        router.push("/");
+        await clearAuthAndRedirect(router);
         return;
       }
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("trainer_name, trainer_code")
+        .select("trainer_name, trainer_code, active")
         .eq("id", userData.user.id)
         .single();
 
       if (profileError || !profile) {
-        setState({
-          loading: false,
-          error: "No se encontro tu perfil. Contacta a un administrador.",
-          success: null,
-          userId: null,
-        });
+        await clearAuthAndRedirect(router);
         return;
+      }
+
+      if (!profile.active) {
+        await clearAuthAndRedirect(router);
+        return;
+      }
+
+      if (
+        snapshot.trainerName !== profile.trainer_name ||
+        snapshot.trainerCode !== profile.trainer_code ||
+        snapshot.active !== profile.active
+      ) {
+        writeAuthSnapshot({
+          ...snapshot,
+          trainerName: profile.trainer_name,
+          trainerCode: profile.trainer_code,
+          active: profile.active,
+          savedAt: Date.now(),
+        });
       }
 
       setForm({
@@ -66,10 +89,11 @@ export default function ProfilePage() {
         success: null,
         userId: userData.user.id,
       });
+      stopNavigation();
     };
 
     void loadProfile();
-  }, [router]);
+  }, [router, stopNavigation]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -116,6 +140,15 @@ export default function ProfilePage() {
     }
 
     setForm({ trainer_name: trainerName, trainer_code: trainerCode });
+    const snapshot = readAuthSnapshot();
+    if (snapshot) {
+      writeAuthSnapshot({
+        ...snapshot,
+        trainerName,
+        trainerCode,
+        savedAt: Date.now(),
+      });
+    }
     setState((current) => ({
       ...current,
       error: null,
@@ -126,7 +159,9 @@ export default function ProfilePage() {
   if (state.loading) {
     return (
       <main className="user-screen">
-        <p className="admin-muted">Cargando...</p>
+        <section className="user-shell">
+          <p className="admin-muted">Cargando...</p>
+        </section>
       </main>
     );
   }
@@ -146,10 +181,10 @@ export default function ProfilePage() {
 
   return (
     <main className="user-screen">
-      <AppNavbar />
       <section className="user-shell user-profile-shell">
-        <h1 className="admin-title">Perfil</h1>
-        <form className="profile-form" onSubmit={handleSubmit}>
+        <h1 className="page-title">Perfil</h1>
+        <div className="profile-card">
+          <form className="profile-form" onSubmit={handleSubmit}>
           <label className="profile-field">
             <span className="profile-label">Nombre de entrenador</span>
             <input
@@ -185,8 +220,15 @@ export default function ProfilePage() {
           <button type="submit" className="access-button" disabled={isSaving}>
             {isSaving ? "Guardando..." : "Guardar cambios"}
           </button>
-        </form>
+          </form>
+        </div>
       </section>
     </main>
   );
 }
+
+
+
+
+
+

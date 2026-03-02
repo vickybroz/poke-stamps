@@ -3,9 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Home from "./page";
 
-const { mockPush, mockSignInWithPassword, mockSingle, mockSignUp, mockInsert } = vi.hoisted(() => ({
+const { mockPush, mockSignInWithPassword, mockSignOut, mockSingle, mockSignUp, mockInsert } = vi.hoisted(() => ({
   mockPush: vi.fn(),
   mockSignInWithPassword: vi.fn(),
+  mockSignOut: vi.fn(),
   mockSingle: vi.fn(),
   mockSignUp: vi.fn(),
   mockInsert: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock("@/lib/supabase/client", () => ({
   supabase: {
     auth: {
       signInWithPassword: mockSignInWithPassword,
+      signOut: mockSignOut,
       signUp: mockSignUp,
     },
     from: (table: string) => {
@@ -72,6 +74,7 @@ describe("Home login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInsert.mockResolvedValue({ error: null });
+    mockSignOut.mockResolvedValue({ error: null });
   });
 
   it("logs in and redirects admin users to /admin", async () => {

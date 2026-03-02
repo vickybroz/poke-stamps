@@ -3,48 +3,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
+import { useNavigationPending } from "@/components/navigation-pending";
 import { supabase } from "@/lib/supabase/client";
-import { AppNavbar } from "@/components/app-navbar";
+import { clearAuthAndRedirect, readAuthSnapshot } from "@/lib/auth-snapshot";
 
 type UserState = {
   trainerName: string | null;
   error: string | null;
   loading: boolean;
-  userId: string | null;
 };
 
-type UserStampRow = {
+type AlbumEntryRow = {
   event_id: string;
+  event_name: string;
+  event_starts_at: string;
+  event_ends_at: string | null;
+  event_image_url: string | null;
+  event_description: string | null;
   collection_id: string;
+  collection_name: string;
+  collection_image_url: string | null;
   stamp_id: string;
-  awarded_at: string;
-  claim_code: string;
-};
-
-type EventItem = {
-  id: string;
-  name: string;
-  starts_at: string;
-  ends_at: string | null;
-  image_url: string | null;
-  description: string | null;
-};
-
-type CollectionItem = {
-  id: string;
-  name: string;
-  image_url: string | null;
-};
-
-type StampItem = {
-  id: string;
-  name: string;
-  image_url: string | null;
-};
-
-type CollectionStampLink = {
-  collection_id: string;
-  stamp_id: string;
+  stamp_name: string;
+  stamp_image_url: string | null;
+  owned: boolean;
+  awarded_at: string | null;
+  claim_code: string | null;
 };
 
 type SelectedUserStamp = {
@@ -58,17 +42,13 @@ type SelectedUserStamp = {
 
 export default function UserPage() {
   const router = useRouter();
+  const { stopNavigation } = useNavigationPending();
   const [state, setState] = useState<UserState>({
     trainerName: null,
     error: null,
     loading: true,
-    userId: null,
   });
-  const [userStamps, setUserStamps] = useState<UserStampRow[]>([]);
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [collections, setCollections] = useState<CollectionItem[]>([]);
-  const [stamps, setStamps] = useState<StampItem[]>([]);
-  const [collectionStamps, setCollectionStamps] = useState<CollectionStampLink[]>([]);
+  const [albumEntries, setAlbumEntries] = useState<AlbumEntryRow[]>([]);
   const [selectedStamp, setSelectedStamp] = useState<SelectedUserStamp | null>(null);
   const [collapsedEvents, setCollapsedEvents] = useState<string[]>([]);
   const [collapsedCollections, setCollapsedCollections] = useState<string[]>([]);
@@ -77,103 +57,42 @@ export default function UserPage() {
 
   useEffect(() => {
     const loadUserProfile = async () => {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const snapshot = readAuthSnapshot();
 
-      if (userError || !userData.user) {
-        router.push("/");
+      if (!snapshot || !snapshot.active) {
+        router.replace("/");
         return;
       }
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("trainer_name, active")
-        .eq("id", userData.user.id)
-        .single();
+      const { data: albumData, error: albumError } = await supabase.rpc(
+        "get_my_album_entries",
+      );
 
-      if (profileError || !profile) {
-        setState({
-          trainerName: null,
-          error: "No se encontro tu perfil. Contacta a un administrador.",
-          loading: false,
-          userId: null,
-        });
+      if (albumError) {
+        await clearAuthAndRedirect(router);
         return;
       }
-
-      if (!profile.active) {
-        setState({
-          trainerName: null,
-          error: "Tu cuenta esta desactivada.",
-          loading: false,
-          userId: null,
-        });
-        return;
-      }
-
-      const { data: userStampData, error: userStampError } = await supabase
-        .from("user_stamps")
-        .select("event_id, collection_id, stamp_id, awarded_at, claim_code")
-        .eq("user_id", userData.user.id)
-        .order("awarded_at", { ascending: false });
-
-      if (userStampError) {
-        setState({
-          trainerName: null,
-          error: "No se pudieron cargar tus stamps.",
-          loading: false,
-          userId: null,
-        });
-        return;
-      }
-
-      const rows = (userStampData as UserStampRow[] | null) ?? [];
-      const eventIds = Array.from(new Set(rows.map((row) => row.event_id)));
-      const collectionIds = Array.from(new Set(rows.map((row) => row.collection_id)));
-
-      const [eventsResponse, collectionsResponse, collectionStampsResponse] = await Promise.all([
-        eventIds.length
-          ? supabase
-              .from("events")
-              .select("id, name, starts_at, ends_at, image_url, description")
-              .in("id", eventIds)
-          : Promise.resolve({ data: [] }),
-        collectionIds.length
-          ? supabase.from("collections").select("id, name, image_url").in("id", collectionIds)
-          : Promise.resolve({ data: [] }),
-        collectionIds.length
-          ? supabase
-              .from("collection_stamps")
-              .select("collection_id, stamp_id")
-              .in("collection_id", collectionIds)
-          : Promise.resolve({ data: [] }),
-      ]);
-
-      const relationRows =
-        (collectionStampsResponse.data as CollectionStampLink[] | null) ?? [];
-      const stampIds = Array.from(new Set(relationRows.map((row) => row.stamp_id)));
-
-      const stampsResponse = stampIds.length
-        ? await supabase.from("stamps").select("id, name, image_url").in("id", stampIds)
-        : { data: [] };
 
       setState({
-        trainerName: profile.trainer_name,
+        trainerName: snapshot.trainerName,
         error: null,
         loading: false,
-        userId: userData.user.id,
       });
-      setUserStamps(rows);
-      setEvents((eventsResponse.data as EventItem[] | null) ?? []);
-      setCollections((collectionsResponse.data as CollectionItem[] | null) ?? []);
-      setCollectionStamps(relationRows);
-      setStamps((stampsResponse.data as StampItem[] | null) ?? []);
+      setAlbumEntries((albumData as AlbumEntryRow[] | null) ?? []);
+      stopNavigation();
     };
 
     void loadUserProfile();
-  }, [router]);
+  }, [router, stopNavigation]);
 
   useEffect(() => {
-    const claimCodes = Array.from(new Set(userStamps.map((row) => row.claim_code).filter(Boolean)));
+    const claimCodes = Array.from(
+      new Set(
+        albumEntries
+          .map((row) => row.claim_code)
+          .filter((claimCode): claimCode is string => Boolean(claimCode)),
+      ),
+    );
 
     if (!claimCodes.length) {
       setQrCodeMap({});
@@ -208,57 +127,77 @@ export default function UserPage() {
     return () => {
       cancelled = true;
     };
-  }, [userStamps]);
+  }, [albumEntries]);
 
   const eventGroups = useMemo(() => {
-    return events
-      .map((eventItem) => {
-        const eventCollections = collections
-          .filter((collectionItem) =>
-            userStamps.some(
-              (userStamp) =>
-                userStamp.event_id === eventItem.id &&
-                userStamp.collection_id === collectionItem.id,
-            ),
-          )
-          .map((collectionItem) => {
-            const collectionStampItems = stamps
-              .filter((stampItem) =>
-                collectionStamps.some(
-                  (collectionStamp) =>
-                    collectionStamp.collection_id === collectionItem.id &&
-                    collectionStamp.stamp_id === stampItem.id,
-                ),
-              )
-              .map((stampItem) => {
-                const awardedStamp = userStamps.find(
-                  (userStamp) =>
-                    userStamp.event_id === eventItem.id &&
-                    userStamp.collection_id === collectionItem.id &&
-                    userStamp.stamp_id === stampItem.id,
-                );
+    const eventsMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        starts_at: string;
+        ends_at: string | null;
+        image_url: string | null;
+        description: string | null;
+        collections: Map<
+          string,
+          {
+            id: string;
+            name: string;
+            image_url: string | null;
+            stamps: Array<{
+              id: string;
+              name: string;
+              image_url: string | null;
+              owned: boolean;
+              claimCode: string | null;
+              awardedAt: string | null;
+            }>;
+          }
+        >;
+      }
+    >();
 
-                return {
-                  ...stampItem,
-                  owned: Boolean(awardedStamp),
-                  claimCode: awardedStamp?.claim_code ?? null,
-                  awardedAt: awardedStamp?.awarded_at ?? null,
-                };
-              });
+    albumEntries.forEach((entry) => {
+      if (!eventsMap.has(entry.event_id)) {
+        eventsMap.set(entry.event_id, {
+          id: entry.event_id,
+          name: entry.event_name,
+          starts_at: entry.event_starts_at,
+          ends_at: entry.event_ends_at,
+          image_url: entry.event_image_url,
+          description: entry.event_description,
+          collections: new Map(),
+        });
+      }
 
-            return {
-              ...collectionItem,
-              stamps: collectionStampItems,
-            };
-          });
+      const eventItem = eventsMap.get(entry.event_id)!;
 
-        return {
-          ...eventItem,
-          collections: eventCollections,
-        };
-      })
-      .filter((eventItem) => eventItem.collections.length > 0);
-  }, [collectionStamps, collections, events, stamps, userStamps]);
+      if (!eventItem.collections.has(entry.collection_id)) {
+        eventItem.collections.set(entry.collection_id, {
+          id: entry.collection_id,
+          name: entry.collection_name,
+          image_url: entry.collection_image_url,
+          stamps: [],
+        });
+      }
+
+      const collectionItem = eventItem.collections.get(entry.collection_id)!;
+      collectionItem.stamps.push({
+        id: entry.stamp_id,
+        name: entry.stamp_name,
+        image_url: entry.stamp_image_url,
+        owned: entry.owned,
+        claimCode: entry.claim_code,
+        awardedAt: entry.awarded_at,
+      });
+    });
+
+    return Array.from(eventsMap.values()).map((eventItem) => ({
+      ...eventItem,
+      collections: Array.from(eventItem.collections.values()),
+    }));
+  }, [albumEntries]);
 
   const formatAwardedAt = (value: string) => {
     const date = new Date(value);
@@ -293,7 +232,9 @@ export default function UserPage() {
   if (state.loading) {
     return (
       <main className="user-screen">
-        <p className="admin-muted">Cargando...</p>
+        <section className="user-shell">       <h1 className="page-title">Mi album</h1>
+          <p className="admin-muted">Cargando...</p>
+        </section>
       </main>
     );
   }
@@ -301,7 +242,7 @@ export default function UserPage() {
   if (state.error) {
     return (
       <main className="user-screen">
-        <section className="user-shell">
+        <section className="user-shell"><h1 className="page-title">Mi album</h1>
           <p className="admin-error">{state.error}</p>
           <button
             className="admin-back-button"
@@ -317,12 +258,9 @@ export default function UserPage() {
 
   return (
     <main className="user-screen">
-      <AppNavbar />
-      <section className="user-shell">
-        <p className="admin-welcome">Bienvenida, {state.trainerName}</p>
-
-        {eventGroups.length ? (
-          <div className="user-album">
+      <section className="user-shell">       <h1 className="page-title">Mi album</h1>
+          {eventGroups.length ? (
+            <div className="user-album">
             {eventGroups.map((eventItem) => (
               <section key={eventItem.id} className="user-event-card">
                 <button
@@ -426,48 +364,49 @@ export default function UserPage() {
                 ) : null}
               </section>
             ))}
-          </div>
-        ) : (
-          <p className="admin-muted">Todavia no tienes stamps activas.</p>
-        )}
+            </div>
+          ) : (
+            <p className="admin-muted">Todavia no tienes stamps activas.</p>
+          )}
+      </section>
 
-        {selectedStamp ? (
+      {selectedStamp ? (
+        <div
+          className="admin-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            setSelectedStamp(null);
+            setIsModalVerifiedOpen(false);
+          }}
+        >
           <div
-            className="admin-modal-backdrop"
-            role="presentation"
-            onClick={() => {
-              setSelectedStamp(null);
-              setIsModalVerifiedOpen(false);
-            }}
+            className="admin-modal user-stamp-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-stamp-modal-title"
+            onClick={(event) => event.stopPropagation()}
           >
-            <div
-              className="admin-modal user-stamp-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="user-stamp-modal-title"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="admin-modal-header">
-                <h2 id="user-stamp-modal-title" className="admin-title">
-                  {selectedStamp.name}
-                </h2>
-                <button
-                  className="admin-icon-close"
-                  type="button"
-                  aria-label="Cerrar"
-                  onClick={() => {
-                    setSelectedStamp(null);
-                    setIsModalVerifiedOpen(false);
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true" className="admin-icon-svg">
-                    <path
-                      fill="currentColor"
-                      d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"
-                    />
-                  </svg>
-                </button>
-              </div>
+            <div className="admin-modal-header">
+              <h2 id="user-stamp-modal-title" className="admin-title">
+                {selectedStamp.name}
+              </h2>
+              <button
+                className="admin-icon-close"
+                type="button"
+                aria-label="Cerrar"
+                onClick={() => {
+                  setSelectedStamp(null);
+                  setIsModalVerifiedOpen(false);
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="admin-icon-svg">
+                  <path
+                    fill="currentColor"
+                    d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"
+                  />
+                </svg>
+              </button>
+            </div>
 
               <div className={`user-stamp-modal-flip ${isModalVerifiedOpen ? "flipped" : ""}`}>
                 <div className="user-stamp-modal-face user-stamp-modal-front">
@@ -526,15 +465,9 @@ export default function UserPage() {
                 <strong>{selectedStamp.collectionName}</strong>, en el evento{" "}
                 <strong>{selectedStamp.eventName}</strong>.
               </p>
-            </div>
           </div>
-        ) : null}
-      </section>
+        </div>
+      ) : null}
     </main>
   );
 }
-
-
-
-
-
