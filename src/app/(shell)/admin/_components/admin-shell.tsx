@@ -10,12 +10,14 @@ type AdminAccessState = {
   loading: boolean;
   trainerName: string | null;
   userId: string | null;
+  role: "admin" | "mod" | null;
 };
 
 const AdminAccessContext = createContext<AdminAccessState>({
   loading: true,
   trainerName: null,
   userId: null,
+  role: null,
 });
 
 export function useAdminAccess() {
@@ -30,6 +32,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     loading: true,
     trainerName: null,
     userId: null,
+    role: null,
   });
 
   useEffect(() => {
@@ -38,7 +41,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       const snapshot = readAuthSnapshot();
 
-      if (!snapshot || !snapshot.active) {
+      if (!snapshot || snapshot.status !== "active") {
         router.replace("/");
         return;
       }
@@ -57,8 +60,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("trainer_name, trainer_code, role, active")
-        .eq("id", userData.user.id)
+        .select("id, trainer_name, trainer_code, role, status")
+        .eq("auth_user_id", userData.user.id)
         .single();
 
       if (profileError || !profile) {
@@ -66,17 +69,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (!profile.active) {
+      if (profile.status !== "active") {
         await clearAuthAndRedirect(router);
         return;
       }
 
       writeAuthSnapshot({
-        userId: userData.user.id,
-        trainerName: profile.trainer_name,
+        userId: profile.id,
+        trainerName: profile.trainer_name ?? profile.trainer_code,
         trainerCode: profile.trainer_code,
         role: profile.role,
-        active: profile.active,
+        status: profile.status,
+        active: profile.status === "active",
         savedAt: Date.now(),
       });
 
@@ -87,8 +91,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       setState({
         loading: false,
-        trainerName: profile.trainer_name,
-        userId: userData.user.id,
+        trainerName: profile.trainer_name ?? profile.trainer_code,
+        userId: profile.id,
+        role: profile.role,
       });
       stopNavigation();
     };

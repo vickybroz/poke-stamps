@@ -37,7 +37,7 @@ export default function ProfilePage() {
     const loadProfile = async () => {
       const snapshot = readAuthSnapshot();
 
-      if (!snapshot || !snapshot.active) {
+      if (!snapshot || snapshot.status !== "active") {
         router.replace("/");
         return;
       }
@@ -51,8 +51,8 @@ export default function ProfilePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("trainer_name, trainer_code, active")
-        .eq("id", userData.user.id)
+        .select("id, trainer_name, trainer_code, status")
+        .eq("auth_user_id", userData.user.id)
         .single();
 
       if (profileError || !profile) {
@@ -60,7 +60,7 @@ export default function ProfilePage() {
         return;
       }
 
-      if (!profile.active) {
+      if (profile.status !== "active") {
         await clearAuthAndRedirect(router);
         return;
       }
@@ -68,13 +68,14 @@ export default function ProfilePage() {
       if (
         snapshot.trainerName !== profile.trainer_name ||
         snapshot.trainerCode !== profile.trainer_code ||
-        snapshot.active !== profile.active
+        snapshot.status !== profile.status
       ) {
         writeAuthSnapshot({
           ...snapshot,
-          trainerName: profile.trainer_name,
+          trainerName: profile.trainer_name ?? profile.trainer_code,
           trainerCode: profile.trainer_code,
-          active: profile.active,
+          status: profile.status,
+          active: profile.status === "active",
           savedAt: Date.now(),
         });
       }
@@ -87,7 +88,7 @@ export default function ProfilePage() {
         loading: false,
         error: null,
         success: null,
-        userId: userData.user.id,
+        userId: profile.id,
       });
       stopNavigation();
     };

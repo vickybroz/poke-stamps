@@ -1,13 +1,15 @@
 "use client";
 
 export type AuthSnapshotRole = "admin" | "mod" | "user";
+export type AuthSnapshotStatus = "active" | "pending" | "provisional" | "inactive";
 
 export type AuthSnapshot = {
   userId: string;
   trainerName: string;
   trainerCode: string;
   role: AuthSnapshotRole;
-  active: boolean;
+  status: AuthSnapshotStatus;
+  active?: boolean;
   savedAt: number;
 };
 
@@ -49,13 +51,26 @@ export function readAuthSnapshot(): AuthSnapshot | null {
       typeof parsed.userId !== "string" ||
       typeof parsed.trainerName !== "string" ||
       typeof parsed.trainerCode !== "string" ||
-      typeof parsed.role !== "string" ||
-      typeof parsed.active !== "boolean"
+      typeof parsed.role !== "string"
     ) {
       return null;
     }
 
-    return parsed;
+    const normalizedStatus =
+      parsed.status === "active" ||
+      parsed.status === "pending" ||
+      parsed.status === "provisional" ||
+      parsed.status === "inactive"
+        ? parsed.status
+        : parsed.active
+          ? "active"
+          : "pending";
+
+    return {
+      ...parsed,
+      status: normalizedStatus,
+      active: normalizedStatus === "active",
+    };
   } catch {
     return null;
   }

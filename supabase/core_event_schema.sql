@@ -14,29 +14,23 @@ create table if not exists public.events (
 
 create table if not exists public.collections (
   id uuid primary key default gen_random_uuid(),
-  event_id uuid not null references public.events(id) on delete cascade,
   name text not null,
   description text,
   image_url text,
   created_at timestamptz not null default now(),
-  created_by uuid references auth.users(id) on delete set null,
-  constraint collections_event_name_unique unique (event_id, name)
+  created_by uuid references auth.users(id) on delete set null
 );
 
 create table if not exists public.stamps (
   id uuid primary key default gen_random_uuid(),
-  collection_id uuid not null references public.collections(id) on delete cascade,
   name text not null,
   description text,
   image_url text,
   created_at timestamptz not null default now(),
-  created_by uuid references auth.users(id) on delete set null,
-  constraint stamps_collection_name_unique unique (collection_id, name)
+  created_by uuid references auth.users(id) on delete set null
 );
 
 create index if not exists idx_events_starts_at on public.events(starts_at);
-create index if not exists idx_collections_event_id on public.collections(event_id);
-create index if not exists idx_stamps_collection_id on public.stamps(collection_id);
 
 alter table public.events enable row level security;
 alter table public.collections enable row level security;
@@ -69,22 +63,10 @@ create policy "events_write_staff"
   for all
   to authenticated
   using (
-    exists (
-      select 1
-      from public.profiles p
-      where p.id = auth.uid()
-        and p.active = true
-        and p.role in ('admin', 'mod')
-    )
+    public.is_staff(auth.uid())
   )
   with check (
-    exists (
-      select 1
-      from public.profiles p
-      where p.id = auth.uid()
-        and p.active = true
-        and p.role in ('admin', 'mod')
-    )
+    public.is_staff(auth.uid())
   );
 
 drop policy if exists "collections_write_staff" on public.collections;
@@ -93,22 +75,10 @@ create policy "collections_write_staff"
   for all
   to authenticated
   using (
-    exists (
-      select 1
-      from public.profiles p
-      where p.id = auth.uid()
-        and p.active = true
-        and p.role in ('admin', 'mod')
-    )
+    public.is_staff(auth.uid())
   )
   with check (
-    exists (
-      select 1
-      from public.profiles p
-      where p.id = auth.uid()
-        and p.active = true
-        and p.role in ('admin', 'mod')
-    )
+    public.is_staff(auth.uid())
   );
 
 drop policy if exists "stamps_write_staff" on public.stamps;
@@ -117,20 +87,8 @@ create policy "stamps_write_staff"
   for all
   to authenticated
   using (
-    exists (
-      select 1
-      from public.profiles p
-      where p.id = auth.uid()
-        and p.active = true
-        and p.role in ('admin', 'mod')
-    )
+    public.is_staff(auth.uid())
   )
   with check (
-    exists (
-      select 1
-      from public.profiles p
-      where p.id = auth.uid()
-        and p.active = true
-        and p.role in ('admin', 'mod')
-    )
+    public.is_staff(auth.uid())
   );

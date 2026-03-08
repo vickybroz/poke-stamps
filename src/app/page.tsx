@@ -168,8 +168,8 @@ export default function Home() {
 
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("trainer_name, trainer_code, role, active")
-          .eq("id", userId)
+          .select("id, trainer_name, trainer_code, role, status")
+          .eq("auth_user_id", userId)
           .single();
 
         if (profileError || !profile) {
@@ -179,19 +179,26 @@ export default function Home() {
           return;
         }
 
-        if (!profile.active) {
+        if (profile.status !== "active") {
           await supabase.auth.signOut();
           clearAuthSnapshot();
-          setError("Pendiente: usuario no habilitado todavia.");
+          setError(
+            profile.status === "pending"
+              ? "Pendiente: usuario no habilitado todavia."
+              : profile.status === "inactive"
+                ? "Tu cuenta esta inactiva y no puede usar la app."
+                : "Tu cuenta todavia no esta habilitada.",
+          );
           return;
         }
 
         writeAuthSnapshot({
-          userId,
-          trainerName: profile.trainer_name,
+          userId: profile.id,
+          trainerName: profile.trainer_name ?? profile.trainer_code,
           trainerCode: profile.trainer_code,
           role: profile.role,
-          active: profile.active,
+          status: profile.status,
+          active: profile.status === "active",
           savedAt: Date.now(),
         });
 
@@ -235,13 +242,48 @@ export default function Home() {
         return;
       }
 
-      const { error: profileError } = await supabase.from("profiles").insert({
-        id: userId,
-        trainer_name: trainerName,
-        trainer_code: trainerCode,
+      const normalizedTrainerCode = trainerCode.replace(/\D/g, "").slice(-12);
+      const normalizedTrainerName = trainerName.trim();
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data: provisionalProfile, error: provisionalProfileError } = await supabase
+        .from("profiles")
+        .select("id, trainer_name, auth_user_id, status")
+        .eq("trainer_code", normalizedTrainerCode)
+        .maybeSingle();
+
+      if (provisionalProfileError) {
+        await supabase.auth.signOut();
+        clearAuthSnapshot();
+        setError(provisionalProfileError.message);
+        return;
+      }
+
+      if (provisionalProfile?.auth_user_id) {
+        await supabase.auth.signOut();
+        clearAuthSnapshot();
+        setError("Ese codigo de entrenador ya esta vinculado a otra cuenta.");
+        return;
+      }
+
+        const profilePayload = {
+          auth_user_id: userId,
+          trainer_name: provisionalProfile?.trainer_name?.trim()
+            ? provisionalProfile.trainer_name
+            : normalizedTrainerName,
+        trainer_code: normalizedTrainerCode,
+        email: normalizedEmail || null,
         role: "user",
-        active: false,
-      });
+          status:
+            provisionalProfile?.status === "inactive"
+              ? "inactive"
+              : provisionalProfile?.id
+                ? "active"
+                : "pending",
+        };
+
+      const { error: profileError } = provisionalProfile?.id
+        ? await supabase.from("profiles").update(profilePayload).eq("id", provisionalProfile.id)
+        : await supabase.from("profiles").insert(profilePayload);
 
       if (profileError) {
         await supabase.auth.signOut();
@@ -252,7 +294,13 @@ export default function Home() {
 
       await supabase.auth.signOut();
       clearAuthSnapshot();
-      setSuccess("Tu solicitud fue enviada. Podras acceder cuando un mod acepte tu acceso.");
+      setSuccess(
+        provisionalProfile?.status === "inactive"
+          ? "Tu cuenta fue vinculada, pero sigue inactive. Solo un admin puede volverla a Active."
+          : provisionalProfile?.id
+          ? "Tu cuenta fue vinculada correctamente. Ya puedes iniciar sesion."
+          : "Tu solicitud fue enviada. Podras acceder cuando un mod acepte tu acceso.",
+      );
       // Keep the user in a submitted state until they choose to go back to sign in.
       setEmail("");
       setPassword("");

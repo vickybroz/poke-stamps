@@ -1,3 +1,5 @@
+export type UserStatus = "active" | "pending" | "provisional" | "inactive";
+
 export type EventItem = {
   id: string;
   name: string;
@@ -83,10 +85,12 @@ export type AdminStampOverviewRow = {
 
 export type UserItem = {
   id: string;
-  trainer_name: string;
+  auth_user_id: string | null;
+  trainer_name: string | null;
   trainer_code: string;
+  email: string | null;
   role: string;
-  active: boolean;
+  status: UserStatus;
 };
 
 export type LogItem = {
@@ -121,5 +125,9 @@ export type TrainerLookupState = {
   loading: boolean;
   name: string | null;
   userId: string | null;
+  status: UserStatus | null;
+  statusLabel: string | null;
+  requiresProvisionalConfirmation: boolean;
+  info: string | null;
   error: string | null;
 };

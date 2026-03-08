@@ -4,6 +4,24 @@ drop policy if exists "stamps_select_authenticated" on public.stamps;
 drop policy if exists "event_collections_select_authenticated" on public.event_collections;
 drop policy if exists "collection_stamps_select_authenticated" on public.collection_stamps;
 drop policy if exists "user_stamps_select_authenticated" on public.user_stamps;
+drop policy if exists "events_select_staff" on public.events;
+drop policy if exists "collections_select_staff" on public.collections;
+drop policy if exists "stamps_select_staff" on public.stamps;
+drop policy if exists "event_collections_select_staff" on public.event_collections;
+drop policy if exists "collection_stamps_select_staff" on public.collection_stamps;
+drop policy if exists "user_stamps_select_own_or_staff" on public.user_stamps;
+
+create or replace function public.get_my_profile_id()
+returns uuid
+language sql
+security definer
+set search_path = public
+as $$
+  select p.id
+  from public.profiles p
+  where p.auth_user_id = auth.uid()
+  limit 1;
+$$;
 
 create policy "events_select_staff"
   on public.events
@@ -39,7 +57,7 @@ create policy "user_stamps_select_own_or_staff"
   on public.user_stamps
   for select
   to authenticated
-  using (user_id = auth.uid() or public.is_staff(auth.uid()));
+  using (user_id = public.get_my_profile_id() or public.is_staff(auth.uid()));
 
 create or replace function public.get_my_album_entries()
 returns table (
@@ -68,7 +86,7 @@ as $$
       us.event_id,
       us.collection_id
     from public.user_stamps us
-    where us.user_id = auth.uid()
+    where us.user_id = public.get_my_profile_id()
   )
   select
     e.id as event_id,
@@ -92,11 +110,12 @@ as $$
   join public.collection_stamps cs on cs.collection_id = mec.collection_id
   join public.stamps s on s.id = cs.stamp_id
   left join public.user_stamps owned_stamp
-    on owned_stamp.user_id = auth.uid()
+    on owned_stamp.user_id = public.get_my_profile_id()
    and owned_stamp.event_id = mec.event_id
    and owned_stamp.collection_id = mec.collection_id
    and owned_stamp.stamp_id = s.id
   order by e.starts_at desc, e.name, c.name, s.name;
 $$;
 
+grant execute on function public.get_my_profile_id() to authenticated;
 grant execute on function public.get_my_album_entries() to authenticated;

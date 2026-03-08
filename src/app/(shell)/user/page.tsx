@@ -59,7 +59,7 @@ export default function UserPage() {
     const loadUserProfile = async () => {
       const snapshot = readAuthSnapshot();
 
-      if (!snapshot || !snapshot.active) {
+      if (!snapshot || snapshot.status !== "active") {
         router.replace("/");
         return;
       }

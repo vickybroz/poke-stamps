@@ -3,12 +3,13 @@ create extension if not exists pgcrypto;
 create or replace function public.generate_claim_code()
 returns text
 language plpgsql
+set search_path = public, extensions
 as $$
 declare
   candidate text;
 begin
   loop
-    candidate := 'PSA-' || upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 4)) || '-' || upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 4));
+    candidate := 'PSA-' || upper(substr(encode(extensions.gen_random_bytes(4), 'hex'), 1, 4)) || '-' || upper(substr(encode(extensions.gen_random_bytes(4), 'hex'), 1, 4));
 
     exit when not exists (
       select 1

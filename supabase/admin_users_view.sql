@@ -5,8 +5,9 @@ select
   p.trainer_code,
   p.role,
   p.active,
-  u.email
+  p.auth_user_id,
+  coalesce(u.email, p.email) as email
 from public.profiles p
-join auth.users u on u.id = p.id;
+left join auth.users u on u.id = p.auth_user_id;
 
 grant select on public.admin_users to authenticated;

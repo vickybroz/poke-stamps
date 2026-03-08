@@ -7,6 +7,13 @@ drop policy if exists "staff_insert_poke_stamp_images" on storage.objects;
 drop policy if exists "staff_update_poke_stamp_images" on storage.objects;
 drop policy if exists "staff_delete_poke_stamp_images" on storage.objects;
 
+drop function if exists public.admin_list_users();
+drop function if exists public.admin_get_albums();
+drop function if exists public.admin_get_events_overview();
+drop function if exists public.admin_get_collections_overview();
+drop function if exists public.admin_get_stamps_overview();
+drop function if exists public.admin_get_logs(date, text, text, text, text, text, text, integer, integer);
+
 create policy "storage_select_poke_stamp_images_staff_only"
 on storage.objects
 for select
@@ -50,10 +57,12 @@ using (
 create or replace function public.admin_list_users()
 returns table (
   id uuid,
+  auth_user_id uuid,
   trainer_name text,
   trainer_code text,
+  email text,
   role text,
-  active boolean
+  status text
 )
 language sql
 security definer
@@ -61,10 +70,12 @@ set search_path = public
 as $$
   select
     p.id,
+    p.auth_user_id,
     p.trainer_name,
     p.trainer_code,
+    p.email,
     p.role,
-    p.active
+    p.status
   from public.profiles p
   where public.is_staff(auth.uid())
   order by p.trainer_name asc;

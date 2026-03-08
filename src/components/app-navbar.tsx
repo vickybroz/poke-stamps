@@ -18,10 +18,11 @@ type SidebarProfile = {
 type NavItem = {
   href: string;
   label: string;
-  icon: "album" | "admin" | "profile" | "events" | "collections" | "stamps" | "gallery" | "users" | "logs";
+  icon: "album" | "admin" | "profile" | "events" | "collections" | "stamps" | "gallery" | "users" | "logs" | "assign";
 };
 
 const adminItems: NavItem[] = [
+  { href: "/admin/albums?assign=1", label: "Asignar stamp", icon: "assign" },
   { href: "/admin/albums", label: "Albumes", icon: "album" },
   { href: "/admin/events", label: "Eventos", icon: "events" },
   { href: "/admin/collections", label: "Colecciones", icon: "collections" },
@@ -102,6 +103,13 @@ function NavIcon({ icon }: { icon: NavItem["icon"] }) {
           <path d="m9 12 2 2 4-4" {...common} />
         </svg>
       );
+    case "assign":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="app-sidebar-icon">
+          <path d="M7 5h10v5h3v6h-3v3H7v-3H4v-6h3V5Z" {...common} />
+          <path d="M12 8v6M9 11h6" {...common} />
+        </svg>
+      );
     default:
       return null;
   }
@@ -122,8 +130,9 @@ export function AppNavbar() {
       return;
     }
 
+    const pendingPath = pendingHref.split("?")[0]?.split("#")[0] ?? pendingHref;
     const normalizedPendingHref =
-      pendingHref.length > 1 && pendingHref.endsWith("/") ? pendingHref.slice(0, -1) : pendingHref;
+      pendingPath.length > 1 && pendingPath.endsWith("/") ? pendingPath.slice(0, -1) : pendingPath;
 
     if (
       normalizedPathname === normalizedPendingHref ||
@@ -151,7 +160,7 @@ export function AppNavbar() {
     const syncProfile = () => {
       const snapshot = readAuthSnapshot();
 
-      if (!snapshot || !snapshot.active) {
+      if (!snapshot || snapshot.status !== "active") {
         setProfile(null);
         return;
       }
@@ -232,7 +241,7 @@ export function AppNavbar() {
             <span>{initials}</span>
           </div>
           <div className="app-sidebar-profile-copy">
-            <p className="app-sidebar-name">{profile.trainer_name}</p>
+            <p className="app-sidebar-name">{profile.trainer_name || profile.trainer_code}</p>
             <p className="app-sidebar-id">{profile.trainer_code}</p>
           </div>
         </div>
@@ -253,14 +262,15 @@ export function AppNavbar() {
 
       <nav className="app-sidebar-nav">
         {navItems.base.map((item) => {
+          const itemPath = item.href.split("?")[0];
           const active =
-            normalizedPathname === item.href || normalizedPathname.startsWith(`${item.href}/`);
+            normalizedPathname === itemPath || normalizedPathname.startsWith(`${itemPath}/`);
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`app-sidebar-link ${active ? "active" : ""}`}
+              className={`app-sidebar-link ${item.icon === "assign" ? "app-sidebar-link-highlight" : ""} ${active ? "active" : ""}`}
               onClick={() => startNavigation(item.href)}
             >
               <NavIcon icon={item.icon} />
@@ -274,14 +284,15 @@ export function AppNavbar() {
             <span className="app-sidebar-admin-divider" aria-hidden="true" />
             <p className="app-sidebar-group-title">Admin</p>
             {navItems.admin.map((item) => {
+              const itemPath = item.href.split("?")[0];
               const active =
-                normalizedPathname === item.href || normalizedPathname.startsWith(`${item.href}/`);
+                normalizedPathname === itemPath || normalizedPathname.startsWith(`${itemPath}/`);
 
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`app-sidebar-link ${active ? "active" : ""}`}
+                  className={`app-sidebar-link ${item.icon === "assign" ? "app-sidebar-link-highlight" : ""} ${active ? "active" : ""}`}
                   onClick={() => startNavigation(item.href)}
                 >
                   <NavIcon icon={item.icon} />

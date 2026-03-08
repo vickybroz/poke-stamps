@@ -13,7 +13,7 @@ export function ShellAccessGuard({ children }: { children: React.ReactNode }) {
     const applyGuard = () => {
       const snapshot = readAuthSnapshot();
 
-      if (!snapshot || !snapshot.active) {
+      if (!snapshot || snapshot.status !== "active") {
         setIsAllowed(false);
         router.replace("/");
         return;

@@ -1,9 +1,16 @@
 create table if not exists public.profile_session_controls (
-  user_id uuid primary key references auth.users(id) on delete cascade,
+  user_id uuid primary key references public.profiles(id) on delete cascade,
   force_reauth_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profile_session_controls
+  drop constraint if exists profile_session_controls_user_id_fkey;
+
+alter table public.profile_session_controls
+  add constraint profile_session_controls_user_id_fkey
+  foreign key (user_id) references public.profiles(id) on delete cascade;
 
 create or replace function public.set_profile_session_controls_updated_at()
 returns trigger
@@ -58,7 +65,7 @@ create policy "own_can_view_profile_session_controls"
 on public.profile_session_controls
 for select
 to authenticated
-using (auth.uid() = user_id);
+using (user_id = public.get_my_profile_id());
 
 create policy "staff_can_view_profile_session_controls"
 on public.profile_session_controls
