@@ -37,6 +37,7 @@ export default function AdminCollectionsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [expandedCollectionId, setExpandedCollectionId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [openGallery, setOpenGallery] = useState(false);
   const [isStampPickerOpen, setIsStampPickerOpen] = useState(false);
   const [stampPickerSearch, setStampPickerSearch] = useState("");
@@ -297,7 +298,19 @@ export default function AdminCollectionsPage() {
 
   return (
     <article className="admin-box">
-      <h2 className="admin-subtitle">Colecciones</h2>
+      <h2 className="admin-subtitle">
+        <span className="admin-users-status-head">
+          <span>Colecciones</span>
+          <button
+            type="button"
+            className="admin-status-help-trigger"
+            aria-label="Ver ayuda de colecciones"
+            onClick={() => setIsHelpOpen(true)}
+          >
+            ?
+          </button>
+        </span>
+      </h2>
 
       <div className="admin-box-header">
         <input
@@ -592,6 +605,36 @@ export default function AdminCollectionsPage() {
               <button className="access-button" type="button" onClick={handleSave} disabled={isSaving}>
                 {isSaving ? "Guardando..." : collectionForm.id ? "Guardar cambios" : "Crear coleccion"}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isHelpOpen ? (
+        <div className="admin-modal-backdrop" onClick={() => setIsHelpOpen(false)}>
+          <div className="admin-modal admin-modal-small" onClick={(event) => event.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2 className="admin-box-title">Que es una coleccion</h2>
+              <button
+                type="button"
+                className="admin-icon-close"
+                onClick={() => setIsHelpOpen(false)}
+                aria-label="Cerrar"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                  <path
+                    d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.41 1.42Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="admin-status-help-copy">
+              <p>Una coleccion es un grupo de stamps agrupadas tematicamente.</p>
+              <p>Idealmente una coleccion no deberia estar atada a un evento temporal o demasiado especifico, para que pueda reutilizarse, aunque a veces puede estarlo.</p>
+              <p>Muchas misiones, desafios o situaciones del juego se repiten, y por eso conviene reutilizar colecciones en lugar de crear nuevas que cumplen la misma funcion.</p>
+              <p>Eso mantiene el sistema mas limpio y evita duplicar estructuras sin necesidad.</p>
+              <p>Ademas, si la coleccion es reutilizable, tambien se puede trackear independientemente del evento donde aparecio.</p>
             </div>
           </div>
         </div>

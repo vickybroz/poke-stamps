@@ -263,6 +263,43 @@ body {
   font-size: 1.5rem;
 }
 
+.admin-gallery-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #1d3c78;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.admin-gallery-usage-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.65);
+}
+
+.admin-gallery-usage-dot-neutral {
+  color: #6b86a8;
+}
+
+.admin-gallery-usage-dot-safe {
+  color: #1f9d55;
+}
+
+.admin-gallery-usage-dot-warn {
+  color: #d9a100;
+}
+
+.admin-gallery-usage-dot-danger {
+  color: #d14343;
+}
+
+.admin-gallery-usage-copy {
+  white-space: nowrap;
+}
+
 .page-title {
   color: #1d3c78;
   font-size: 1.5rem;
@@ -706,6 +743,13 @@ body {
   margin-bottom: 12px;
 }
 
+.admin-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .admin-box-header-title {
   margin-bottom: 8px;
 }
@@ -822,6 +866,59 @@ body {
   border-radius: 8px;
   background: #0f172a;
   object-fit: cover;
+}
+
+.admin-claim-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #dbe7f4;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.admin-claim-card-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-claim-thumb {
+  width: 88px;
+  height: 88px;
+  border-radius: 12px;
+  border: 1px solid #dbe7f4;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.admin-claim-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: #1d3c78;
+}
+
+.admin-claim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.admin-claim-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-claim-label {
+  color: #6b86a8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .admin-inline-form {
@@ -1676,6 +1773,15 @@ body {
     padding-left: 45px;
     display: flex;
     align-items: center;
+  }
+
+  .admin-gallery-usage {
+    font-size: 0.84rem;
+  }
+
+  .admin-gallery-usage-dot {
+    width: 16px;
+    height: 16px;
   }
 
   .user-shell {

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAdminAccess } from "../_components/admin-shell";
 import { getActiveSearchTerm } from "../_lib/constants";
 import { loadImageLibrary } from "../_lib/images";
-import type { AdminStampOverviewRow, ImageOption, StampItem } from "../_lib/types";
+import type { AdminStampOverviewRow, ImageOption, StampClaimLookupResult, StampItem } from "../_lib/types";
 
 type StampFormState = {
   id: string;
@@ -14,6 +14,32 @@ type StampFormState = {
   description: string;
   image_url: string;
 };
+
+type BarcodeDetectorResult = {
+  rawValue?: string;
+};
+
+type BarcodeDetectorInstance = {
+  detect: (source: CanvasImageSource) => Promise<BarcodeDetectorResult[]>;
+};
+
+type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
+
+function normalizeClaimCode(rawValue: string) {
+  const trimmed = rawValue.trim().toUpperCase();
+  const match = trimmed.match(/PSA-[A-Z0-9]{4}-[A-Z0-9]{4}/);
+  return match?.[0] ?? trimmed;
+}
+
+function getStatusLabel(status: StampClaimLookupResult["delivered_to_status"]) {
+  return status === "active"
+    ? "Active"
+    : status === "pending"
+      ? "Pending"
+      : status === "provisional"
+        ? "Provisional"
+        : "Inactive";
+}
 
 export default function AdminStampsPage() {
   const searchParams = useSearchParams();
@@ -25,14 +51,25 @@ export default function AdminStampsPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isIdentifyOpen, setIsIdentifyOpen] = useState(false);
   const [openGallery, setOpenGallery] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [claimCodeInput, setClaimCodeInput] = useState("");
+  const [identifiedStamp, setIdentifiedStamp] = useState<StampClaimLookupResult | null>(null);
+  const [identifyError, setIdentifyError] = useState<string | null>(null);
+  const [isIdentifying, setIsIdentifying] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
   const [stampForm, setStampForm] = useState<StampFormState>({
     id: "",
     name: "",
     description: "",
     image_url: "",
   });
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
+  const scannerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const queryId = searchParams.get("id");
   const activeSearch = getActiveSearchTerm(search);
@@ -111,6 +148,75 @@ export default function AdminStampsPage() {
     resetForm();
   };
 
+  const stopScanner = useCallback(() => {
+    if (scannerIntervalRef.current) {
+      clearInterval(scannerIntervalRef.current);
+      scannerIntervalRef.current = null;
+    }
+
+    if (scannerStreamRef.current) {
+      scannerStreamRef.current.getTracks().forEach((track) => track.stop());
+      scannerStreamRef.current = null;
+    }
+  }, []);
+
+  const resetIdentifyModal = useCallback(() => {
+    setClaimCodeInput("");
+    setIdentifiedStamp(null);
+    setIdentifyError(null);
+    setIsIdentifying(false);
+    setScannerError(null);
+    setIsScannerOpen(false);
+    stopScanner();
+  }, [stopScanner]);
+
+  const closeIdentifyModal = useCallback(() => {
+    setIsIdentifyOpen(false);
+    resetIdentifyModal();
+  }, [resetIdentifyModal]);
+
+  const handleIdentifyStamp = useCallback(
+    async (rawValue?: string) => {
+      const normalizedClaimCode = normalizeClaimCode(rawValue ?? claimCodeInput);
+
+      if (!normalizedClaimCode) {
+        setIdentifyError("Ingresa un claim code valido.");
+        setIdentifiedStamp(null);
+        return;
+      }
+
+      setClaimCodeInput(normalizedClaimCode);
+      setIsIdentifying(true);
+      setIdentifyError(null);
+
+      try {
+        const { data, error } = await supabase.rpc("admin_identify_stamp", {
+          p_claim_code: normalizedClaimCode,
+        });
+
+        if (error) throw error;
+
+        const result = Array.isArray(data) ? data[0] : null;
+
+        if (!result) {
+          setIdentifiedStamp(null);
+          setIdentifyError("No existe una stamp entregada con ese claim code.");
+          return;
+        }
+
+        setIdentifiedStamp(result as StampClaimLookupResult);
+        setIdentifyError(null);
+        setScannerError(null);
+      } catch (error) {
+        setIdentifiedStamp(null);
+        setIdentifyError(error instanceof Error ? error.message : "No se pudo identificar la stamp.");
+      } finally {
+        setIsIdentifying(false);
+      }
+    },
+    [claimCodeInput],
+  );
+
   const handleSave = async () => {
     if (!userId || !stampForm.name.trim()) {
       setFeedback("Completa el nombre.");
@@ -178,9 +284,115 @@ export default function AdminStampsPage() {
     setIsModalOpen(true);
   };
 
+  useEffect(() => {
+    if (!isIdentifyOpen) {
+      stopScanner();
+      setIsScannerOpen(false);
+    }
+  }, [isIdentifyOpen, stopScanner]);
+
+  useEffect(() => {
+    if (!isScannerOpen) {
+      stopScanner();
+      return;
+    }
+
+    const BarcodeDetectorApi = (
+      window as Window & { BarcodeDetector?: BarcodeDetectorConstructor }
+    ).BarcodeDetector;
+
+    if (!BarcodeDetectorApi) {
+      setScannerError("Este navegador no soporta escaneo QR.");
+      setIsScannerOpen(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const startScanner = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        scannerStreamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        const detector = new BarcodeDetectorApi({ formats: ["qr_code"] });
+
+        scannerIntervalRef.current = setInterval(async () => {
+          if (!videoRef.current) return;
+
+          try {
+            const results = await detector.detect(videoRef.current);
+            const rawValue = results[0]?.rawValue;
+            if (!rawValue) return;
+
+            const normalizedClaimCode = normalizeClaimCode(rawValue);
+            if (!normalizedClaimCode) {
+              setScannerError("El QR no contiene un claim code valido.");
+              return;
+            }
+
+            setClaimCodeInput(normalizedClaimCode);
+            setIsScannerOpen(false);
+            setScannerError(null);
+            void handleIdentifyStamp(normalizedClaimCode);
+          } catch {
+            setScannerError("No se pudo leer el QR. Intenta acercar la camara.");
+          }
+        }, 500);
+      } catch {
+        setScannerError("No se pudo abrir la camara.");
+        setIsScannerOpen(false);
+      }
+    };
+
+    void startScanner();
+
+    return () => {
+      cancelled = true;
+      stopScanner();
+    };
+  }, [handleIdentifyStamp, isScannerOpen, stopScanner]);
+
   return (
     <article className="admin-box">
-      <h2 className="admin-subtitle">Stamps</h2>
+      <div className="admin-box-header admin-box-header-title">
+        <h2 className="admin-subtitle admin-subtitle-no-margin">
+          <span className="admin-users-status-head">
+            <span>Stamps</span>
+            <button
+              type="button"
+              className="admin-status-help-trigger"
+              aria-label="Ver ayuda de stamps"
+              onClick={() => setIsHelpOpen(true)}
+            >
+              ?
+            </button>
+          </span>
+        </h2>
+        <button
+          type="button"
+          className="admin-mini-btn admin-mini-btn-provisional"
+          onClick={() => {
+            resetIdentifyModal();
+            setIsIdentifyOpen(true);
+          }}
+        >
+          Identificar stamp
+        </button>
+      </div>
 
       <div className="admin-box-header">
         <input
@@ -319,6 +531,165 @@ export default function AdminStampsPage() {
               <button className="access-button" type="button" onClick={handleSave} disabled={isSaving}>
                 {isSaving ? "Guardando..." : stampForm.id ? "Guardar cambios" : "Crear stamp"}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isIdentifyOpen ? (
+        <div className="admin-modal-backdrop" onClick={closeIdentifyModal}>
+          <div className="admin-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2 className="admin-box-title">Identificar stamp</h2>
+              <button
+                type="button"
+                className="admin-icon-close"
+                onClick={closeIdentifyModal}
+                aria-label="Cerrar"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                  <path
+                    d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.41 1.42Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="admin-award-form">
+              <div className="admin-inline-actions">
+                <input
+                  className="auth-input"
+                  placeholder="Claim code"
+                  value={claimCodeInput}
+                  onChange={(event) => {
+                    setClaimCodeInput(event.target.value.toUpperCase());
+                    setIdentifyError(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="admin-mini-btn admin-mini-btn-provisional"
+                  onClick={() => {
+                    setScannerError(null);
+                    setIsScannerOpen((current) => !current);
+                  }}
+                >
+                  {isScannerOpen ? "Cerrar scanner" : "Escanear QR"}
+                </button>
+              </div>
+
+              {isScannerOpen ? (
+                <div className="admin-scanner-panel">
+                  <video ref={videoRef} className="admin-scanner-video" muted playsInline />
+                  {scannerError ? <p className="admin-error admin-error-small">{scannerError}</p> : null}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                className="access-button"
+                onClick={() => void handleIdentifyStamp()}
+                disabled={isIdentifying}
+              >
+                {isIdentifying ? "Buscando..." : "Identificar"}
+              </button>
+
+              {identifyError ? <p className="admin-error">{identifyError}</p> : null}
+
+              {identifiedStamp ? (
+                <div className="admin-claim-card">
+                  <div className="admin-claim-card-head">
+                    {identifiedStamp.stamp_image_url ? (
+                      <img
+                        src={identifiedStamp.stamp_image_url}
+                        alt={identifiedStamp.stamp_name}
+                        className="admin-claim-thumb"
+                      />
+                    ) : (
+                      <div className="admin-stamp-placeholder admin-claim-thumb">Sin imagen</div>
+                    )}
+                    <div className="admin-claim-summary">
+                      <strong>{identifiedStamp.stamp_name}</strong>
+                      <span className="admin-muted">{identifiedStamp.claim_code}</span>
+                      <span className="admin-muted">
+                        {identifiedStamp.event_name} / {identifiedStamp.collection_name} / {identifiedStamp.stamp_name}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="admin-claim-grid">
+                    <div>
+                      <span className="admin-claim-label">Entregada a</span>
+                      <strong>{identifiedStamp.delivered_to_name?.trim() || "Trainer sin nombre"}</strong>
+                      <span className="admin-muted">{identifiedStamp.delivered_to_code}</span>
+                      <span className="admin-muted">
+                        Status: {getStatusLabel(identifiedStamp.delivered_to_status)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="admin-claim-label">Entregada por</span>
+                      <strong>{identifiedStamp.delivered_by_name?.trim() || "-"}</strong>
+                      <span className="admin-muted">
+                        {identifiedStamp.delivered_by_code ?? "Sin trainer code"}
+                      </span>
+                      <span className="admin-muted">
+                        {identifiedStamp.delivered_by_role
+                          ? `Rol: ${identifiedStamp.delivered_by_role}`
+                          : "Sin registro de asignador"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="admin-claim-label">Fecha</span>
+                      <strong>{new Date(identifiedStamp.awarded_at).toLocaleString()}</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isHelpOpen ? (
+        <div className="admin-modal-backdrop" onClick={() => setIsHelpOpen(false)}>
+          <div className="admin-modal admin-modal-small" onClick={(event) => event.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2 className="admin-box-title">Que es una stamp</h2>
+              <button
+                type="button"
+                className="admin-icon-close"
+                onClick={() => setIsHelpOpen(false)}
+                aria-label="Cerrar"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                  <path
+                    d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.41 1.42Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="admin-status-help-copy">
+              <p>Una stamp es una entidad del sistema con un nombre o titulo y una imagen asociada.</p>
+              <p>Aunque una stamp pueda reutilizarse en distintas colecciones y eventos, sigue siendo una stamp unica dentro del sistema.</p>
+              <p>Lo que la hace unica no es solamente la imagen: dos stamps pueden compartir imagen y aun asi ser entidades distintas si representan cosas distintas dentro del sistema.</p>
+              <p>Una stamp puede estar asignada a varias colecciones, y esas colecciones a su vez pueden estar asociadas a distintos eventos.</p>
+              <p>Por eso es importante que la stamp sea independiente de su contexto de coleccion o evento si queres reutilizarla.</p>
+              <p>Si una stamp depende demasiado de un contexto puntual, entonces deberia quedar atada a ese contexto y no reutilizarse.</p>
+              <p>La ventaja de mantenerla independiente es que se puede trackear de forma global, mas alla de en que coleccion o evento fue conseguida.</p>
+              <p>Ejemplo: Groudon shiny puede ser una stamp reutilizada en varias colecciones, como incursiones de Groudon, incursiones primigenias o incursiones legendarias.</p>
+              <p>Asi es posible saber quien obtuvo un Groudon shiny independientemente del evento o la coleccion donde lo consiguio.</p>
+              <p>
+                <strong>
+                  Cuando una stamp se entrega a una persona, esa entrega genera su propio claim code. El
+                  claim code es el codigo identificatorio de cada stamp entregada y es lo que la vuelve
+                  unica a nivel de asignacion.
+                </strong>
+              </p>
+              <p>
+                Gracias a ese codigo, el sistema puede interpretar cuando fue entregada, a quien, para
+                que evento y coleccion, y por que mod o admin fue asignada.
+              </p>
             </div>
           </div>
         </div>

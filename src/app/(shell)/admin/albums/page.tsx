@@ -78,6 +78,7 @@ export default function AdminAlbumsPage() {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [awardTarget, setAwardTarget] = useState<AwardTarget>(null);
   const [isManualAwardOpen, setIsManualAwardOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [manualEventSearch, setManualEventSearch] = useState("");
   const [manualCollectionSearch, setManualCollectionSearch] = useState("");
   const [manualStampSearch, setManualStampSearch] = useState("");
@@ -691,7 +692,19 @@ export default function AdminAlbumsPage() {
   return (
     <article className="admin-box">
       <div className="admin-box-header admin-box-header-title">
-        <h2 className="admin-subtitle admin-subtitle-no-margin">Albumes</h2>
+        <h2 className="admin-subtitle admin-subtitle-no-margin">
+          <span className="admin-users-status-head">
+            <span>Albumes</span>
+            <button
+              type="button"
+              className="admin-status-help-trigger"
+              aria-label="Ver ayuda de albumes"
+              onClick={() => setIsHelpOpen(true)}
+            >
+              ?
+            </button>
+          </span>
+        </h2>
         <button
           type="button"
           className="admin-mini-btn admin-mini-btn-provisional"
@@ -713,6 +726,34 @@ export default function AdminAlbumsPage() {
       </div>
 
       {feedback ? <p className="admin-feedback">{feedback}</p> : null}
+
+      {isHelpOpen ? (
+        <div className="admin-modal-backdrop" onClick={() => setIsHelpOpen(false)}>
+          <div className="admin-modal admin-modal-small" onClick={(event) => event.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2 className="admin-box-title">Que es un album</h2>
+              <button
+                type="button"
+                className="admin-icon-close"
+                onClick={() => setIsHelpOpen(false)}
+                aria-label="Cerrar"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                  <path
+                    d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.41 1.42Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="admin-status-help-copy">
+              <p>El album es la vista donde se muestran todas las stamps existentes, organizadas dentro de su coleccion y de su evento.</p>
+              <p>No es una entidad aparte del sistema, sino una forma de navegar y entender como se relacionan los eventos, las colecciones y las stamps.</p>
+              <p>Sirve para ver el contexto completo de cada stamp y tambien como punto de entrada para asignarlas a usuarios, ya sea desde una stamp puntual o usando el flujo de asignacion manual.</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ul className="admin-list">
         {filteredEvents.map((eventItem) => {

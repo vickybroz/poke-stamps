@@ -12,7 +12,9 @@ drop function if exists public.admin_get_albums();
 drop function if exists public.admin_get_events_overview();
 drop function if exists public.admin_get_collections_overview();
 drop function if exists public.admin_get_stamps_overview();
-drop function if exists public.admin_get_logs(date, text, text, text, text, text, text, integer, integer);
+drop function if exists public.admin_identify_stamp(text);
+drop function if exists public.admin_get_image_bucket_usage();
+drop function if exists public.admin_get_logs(date, text, text, text, text, text, text, text, integer, integer);
 
 create policy "storage_select_poke_stamp_images_staff_only"
 on storage.objects
@@ -231,11 +233,90 @@ $$;
 
 grant execute on function public.admin_get_stamps_overview() to authenticated;
 
+create or replace function public.admin_get_image_bucket_usage()
+returns table (
+  used_bytes bigint,
+  object_count bigint
+)
+language sql
+security definer
+set search_path = public, storage
+as $$
+  select
+    coalesce(sum(coalesce((o.metadata->>'size')::bigint, 0)), 0)::bigint as used_bytes,
+    count(*)::bigint as object_count
+  from storage.objects o
+  where public.is_staff(auth.uid())
+    and o.bucket_id = 'poke-stamp-images';
+$$;
+
+grant execute on function public.admin_get_image_bucket_usage() to authenticated;
+
+create or replace function public.admin_identify_stamp(
+  p_claim_code text
+)
+returns table (
+  id uuid,
+  claim_code text,
+  awarded_at timestamptz,
+  event_id uuid,
+  event_name text,
+  collection_id uuid,
+  collection_name text,
+  stamp_id uuid,
+  stamp_name text,
+  stamp_image_url text,
+  delivered_to_id uuid,
+  delivered_to_name text,
+  delivered_to_code text,
+  delivered_to_status text,
+  delivered_by_id uuid,
+  delivered_by_name text,
+  delivered_by_code text,
+  delivered_by_role text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    us.id,
+    us.claim_code,
+    us.awarded_at,
+    e.id as event_id,
+    e.name as event_name,
+    c.id as collection_id,
+    c.name as collection_name,
+    s.id as stamp_id,
+    s.name as stamp_name,
+    s.image_url as stamp_image_url,
+    recipient.id as delivered_to_id,
+    recipient.trainer_name as delivered_to_name,
+    recipient.trainer_code as delivered_to_code,
+    recipient.status as delivered_to_status,
+    awarder.id as delivered_by_id,
+    awarder.trainer_name as delivered_by_name,
+    awarder.trainer_code as delivered_by_code,
+    awarder.role as delivered_by_role
+  from public.user_stamps us
+  join public.events e on e.id = us.event_id
+  join public.collections c on c.id = us.collection_id
+  join public.stamps s on s.id = us.stamp_id
+  join public.profiles recipient on recipient.id = us.user_id
+  left join public.profiles awarder on awarder.id = us.awarded_by
+  where public.is_staff(auth.uid())
+    and us.claim_code = upper(trim(coalesce(p_claim_code, '')))
+  limit 1;
+$$;
+
+grant execute on function public.admin_identify_stamp(text) to authenticated;
+
 create or replace function public.admin_get_logs(
   p_awarded_at date default null,
   p_stamp_name text default null,
   p_collection_name text default null,
   p_event_name text default null,
+  p_trainer_code text default null,
   p_delivered_to text default null,
   p_delivered_by text default null,
   p_claim_code text default null,
@@ -249,6 +330,7 @@ returns table (
   event_name text,
   collection_name text,
   stamp_name text,
+  trainer_code text,
   delivered_to text,
   delivered_by text,
   total_count bigint
@@ -265,6 +347,7 @@ as $$
       e.name as event_name,
       c.name as collection_name,
       s.name as stamp_name,
+      recipient.trainer_code,
       recipient.trainer_name as delivered_to,
       coalesce(awarder.trainer_name, '-') as delivered_by
     from public.user_stamps us
@@ -279,6 +362,7 @@ as $$
       and (p_stamp_name is null or s.name ilike '%' || p_stamp_name || '%')
       and (p_collection_name is null or c.name ilike '%' || p_collection_name || '%')
       and (p_event_name is null or e.name ilike '%' || p_event_name || '%')
+      and (p_trainer_code is null or recipient.trainer_code ilike '%' || p_trainer_code || '%')
       and (p_delivered_to is null or recipient.trainer_name ilike '%' || p_delivered_to || '%')
       and (p_delivered_by is null or coalesce(awarder.trainer_name, '') ilike '%' || p_delivered_by || '%')
       and (p_claim_code is null or us.claim_code ilike '%' || p_claim_code || '%')
@@ -296,6 +380,7 @@ as $$
     counted.event_name,
     counted.collection_name,
     counted.stamp_name,
+    counted.trainer_code,
     counted.delivered_to,
     counted.delivered_by,
     counted.total_count
@@ -305,4 +390,4 @@ as $$
   limit greatest(coalesce(p_page_size, 20), 1);
 $$;
 
-grant execute on function public.admin_get_logs(date, text, text, text, text, text, text, integer, integer) to authenticated;
+grant execute on function public.admin_get_logs(date, text, text, text, text, text, text, text, integer, integer) to authenticated;

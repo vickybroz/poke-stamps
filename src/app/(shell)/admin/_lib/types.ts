@@ -83,6 +83,27 @@ export type AdminStampOverviewRow = {
   collection_name: string | null;
 };
 
+export type StampClaimLookupResult = {
+  id: string;
+  claim_code: string;
+  awarded_at: string;
+  event_id: string;
+  event_name: string;
+  collection_id: string;
+  collection_name: string;
+  stamp_id: string;
+  stamp_name: string;
+  stamp_image_url: string | null;
+  delivered_to_id: string;
+  delivered_to_name: string | null;
+  delivered_to_code: string;
+  delivered_to_status: UserStatus;
+  delivered_by_id: string | null;
+  delivered_by_name: string | null;
+  delivered_by_code: string | null;
+  delivered_by_role: string | null;
+};
+
 export type UserItem = {
   id: string;
   auth_user_id: string | null;
@@ -100,6 +121,7 @@ export type LogItem = {
   event_name: string;
   collection_name: string;
   stamp_name: string;
+  trainer_code: string;
   delivered_to: string;
   delivered_by: string;
 };
@@ -109,6 +131,7 @@ export type LogFilters = {
   stamp_name: string;
   collection_name: string;
   event_name: string;
+  trainer_code: string;
   delivered_to: string;
   delivered_by: string;
   claim_code: string;

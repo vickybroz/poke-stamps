@@ -35,6 +35,7 @@ export default function AdminEventsPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [openGallery, setOpenGallery] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -244,7 +245,19 @@ export default function AdminEventsPage() {
 
   return (
     <article className="admin-box">
-      <h2 className="admin-subtitle">Eventos</h2>
+      <h2 className="admin-subtitle">
+        <span className="admin-users-status-head">
+          <span>Eventos</span>
+          <button
+            type="button"
+            className="admin-status-help-trigger"
+            aria-label="Ver ayuda de eventos"
+            onClick={() => setIsHelpOpen(true)}
+          >
+            ?
+          </button>
+        </span>
+      </h2>
 
       <div className="admin-box-header">
         <input
@@ -484,6 +497,36 @@ export default function AdminEventsPage() {
               <button className="access-button" type="button" onClick={handleSave} disabled={isSaving}>
                 {isSaving ? "Guardando..." : eventForm.id ? "Guardar cambios" : "Crear evento"}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isHelpOpen ? (
+        <div className="admin-modal-backdrop" onClick={() => setIsHelpOpen(false)}>
+          <div className="admin-modal admin-modal-small" onClick={(event) => event.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2 className="admin-box-title">Que es un evento</h2>
+              <button
+                type="button"
+                className="admin-icon-close"
+                onClick={() => setIsHelpOpen(false)}
+                aria-label="Cerrar"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="admin-icon-svg">
+                  <path
+                    d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.41 1.42Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="admin-status-help-copy">
+              <p>Un evento es un grupo de colecciones que comparten un periodo temporal de validez.</p>
+              <p>Ese periodo puede tener fecha de inicio y fin, o puede quedar abierto sin fin definido.</p>
+              <p>El evento sirve para dar contexto temporal a colecciones que ya existen, sin necesidad de duplicarlas.</p>
+              <p>Eso permite reutilizar las mismas colecciones en distintas campañas, fechas o momentos del juego.</p>
+              <p>En general conviene que el evento represente el marco temporal y no la logica interna de las colecciones.</p>
             </div>
           </div>
         </div>

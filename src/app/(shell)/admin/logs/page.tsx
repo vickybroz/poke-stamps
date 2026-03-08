@@ -16,6 +16,7 @@ export default function AdminLogsPage() {
     stamp_name: "",
     collection_name: "",
     event_name: "",
+    trainer_code: "",
     delivered_to: "",
     delivered_by: "",
     claim_code: "",
@@ -25,6 +26,7 @@ export default function AdminLogsPage() {
     stamp_name: "",
     collection_name: "",
     event_name: "",
+    trainer_code: "",
     delivered_to: "",
     delivered_by: "",
     claim_code: "",
@@ -36,6 +38,7 @@ export default function AdminLogsPage() {
       stamp_name: getActiveSearchTerm(submittedFilters.stamp_name),
       collection_name: getActiveSearchTerm(submittedFilters.collection_name),
       event_name: getActiveSearchTerm(submittedFilters.event_name),
+      trainer_code: getActiveSearchTerm(submittedFilters.trainer_code),
       delivered_to: getActiveSearchTerm(submittedFilters.delivered_to),
       delivered_by: getActiveSearchTerm(submittedFilters.delivered_by),
       claim_code: getActiveSearchTerm(submittedFilters.claim_code),
@@ -68,6 +71,7 @@ export default function AdminLogsPage() {
         p_stamp_name: normalizeRpcFilter(appliedFilters.stamp_name),
         p_collection_name: normalizeRpcFilter(appliedFilters.collection_name),
         p_event_name: normalizeRpcFilter(appliedFilters.event_name),
+        p_trainer_code: normalizeRpcFilter(appliedFilters.trainer_code),
         p_delivered_to: normalizeRpcFilter(appliedFilters.delivered_to),
         p_delivered_by: normalizeRpcFilter(appliedFilters.delivered_by),
         p_claim_code: normalizeRpcFilter(appliedFilters.claim_code),
@@ -85,6 +89,7 @@ export default function AdminLogsPage() {
           event_name: string;
           collection_name: string;
           stamp_name: string;
+          trainer_code: string;
           delivered_to: string;
           delivered_by: string;
           total_count: number;
@@ -98,6 +103,7 @@ export default function AdminLogsPage() {
           event_name: row.event_name,
           collection_name: row.collection_name,
           stamp_name: row.stamp_name,
+          trainer_code: row.trainer_code,
           delivered_to: row.delivered_to,
           delivered_by: row.delivered_by,
         })),
@@ -130,6 +136,7 @@ export default function AdminLogsPage() {
       stamp_name: "",
       collection_name: "",
       event_name: "",
+      trainer_code: "",
       delivered_to: "",
       delivered_by: "",
       claim_code: "",
@@ -180,6 +187,15 @@ export default function AdminLogsPage() {
             value={filters.event_name}
             onChange={(event) =>
               setFilters((prev) => ({ ...prev, event_name: event.target.value }))
+            }
+          />
+          <input
+            className="admin-search-input"
+            type="search"
+            placeholder="Trainer ID"
+            value={filters.trainer_code}
+            onChange={(event) =>
+              setFilters((prev) => ({ ...prev, trainer_code: event.target.value }))
             }
           />
           <input
@@ -240,6 +256,7 @@ export default function AdminLogsPage() {
               <th>Stamp</th>
               <th>De la coleccion</th>
               <th>En el evento</th>
+              <th>Trainer ID</th>
               <th>Entregada a</th>
               <th>Entregada por</th>
               <th>Claim code</th>
@@ -252,6 +269,7 @@ export default function AdminLogsPage() {
                 <td>{log.stamp_name}</td>
                 <td>{log.collection_name}</td>
                 <td>{log.event_name}</td>
+                <td>{log.trainer_code}</td>
                 <td>{log.delivered_to}</td>
                 <td>{log.delivered_by}</td>
                 <td>{log.claim_code}</td>
@@ -259,7 +277,7 @@ export default function AdminLogsPage() {
             ))}
             {!logs.length && !logsLoading ? (
               <tr>
-                <td colSpan={7} className="admin-muted">
+                <td colSpan={8} className="admin-muted">
                   No hay resultados.
                 </td>
               </tr>
